@@ -1,8 +1,8 @@
-# AcuityFlow AI — Round 2 Prototype
+# AcuityFlow AI — decision-support syste
 
 ## Purpose
 
-AcuityFlow AI is a **prototype decision-support system** for the Accenture Innovation Challenge 2026, Problem 2: PatientTriage.ai.
+AcuityFlow AI is a **prototype decision-support system**.
 
 The prototype helps emergency-department staff:
 
