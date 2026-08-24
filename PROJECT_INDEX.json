@@ -1,0 +1,31 @@
+{
+  "generated_at": "2026-08-24",
+  "project": "AcuityFlow AI",
+  "files": [
+    "AGENTS.md",
+    "README.md",
+    "docs/ASSUMPTIONS.md",
+    "docs/CLOUD_CREDITS.md",
+    "docs/DATA_SCHEMA.md",
+    "docs/DEMO_PLAN.md",
+    "docs/EVALUATION.md",
+    "docs/IMPLEMENTATION_PLAN.md",
+    "docs/PRIVACY_SECURITY.md",
+    "docs/PRODUCT_SPEC.md",
+    "docs/ROUND2_CHECKLIST.md",
+    "docs/SAFETY_UNCERTAINTY.md",
+    "docs/SOURCE_OF_TRUTH.md",
+    "docs/SURGE_REASSESSMENT.md",
+    "docs/TEST_CASES.md",
+    "docs/TRIAGE_POLICY.md"
+  ],
+  "primary_contracts": [
+    "README.md",
+    "AGENTS.md",
+    "docs/PRODUCT_SPEC.md",
+    "docs/TRIAGE_POLICY.md",
+    "docs/SAFETY_UNCERTAINTY.md",
+    "docs/DATA_SCHEMA.md",
+    "docs/TEST_CASES.md"
+  ]
+}
