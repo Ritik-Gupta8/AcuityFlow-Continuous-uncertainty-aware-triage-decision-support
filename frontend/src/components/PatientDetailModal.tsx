@@ -235,12 +235,30 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
                   </div>
                 </div>
 
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>Model Confidence</span>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: triageResult.confidence_score < 65 ? '#f87171' : '#6ee7b7' }}>
-                    {triageResult.confidence_score}%
+                <div style={{ display: 'flex', gap: 16, textAlign: 'right' }}>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>Risk Score</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f1f5f9' }}>
+                      {triageResult.risk_score}<span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8' }}>/100</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>Workflow Confidence</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: triageResult.confidence_score < 65 ? '#f87171' : '#6ee7b7' }}>
+                      {triageResult.confidence_score}%
+                    </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Decision Source & Population Profile Badge */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem', background: 'rgba(59, 130, 246, 0.1)', padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                <span style={{ color: '#93c5fd' }}>
+                  <strong>Source: </strong> Safety Gate + Calibrated Risk Model
+                </span>
+                <span style={{ color: '#cbd5e1', fontWeight: 600 }}>
+                  Profile: <span style={{ textTransform: 'uppercase', color: '#60a5fa' }}>{triageResult.population_profile}</span>
+                </span>
               </div>
 
               {/* Completeness Bar */}
