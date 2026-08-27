@@ -1,125 +1,140 @@
 """
-Structured Risk Scoring & Explainability Baseline (AcuityExplain).
-Estimates underlying risk score (0..100) and model certainty.
+Structured Risk Scoring & Runtime Model Execution.
+Loads calibrated scikit-learn model artifacts from ml/artifacts/.
+Returns structured risk predictions, calibrated probabilities, and feature attributions.
 TODO: CLINICAL VALIDATION REQUIRED.
 """
 
-from typing import Dict, Any, Tuple, List, Optional
+import os
+import joblib
 import numpy as np
-from app.core.config import settings
+import pandas as pd
+from typing import Dict, Any, Tuple, List, Optional
 from app.models.entities import Patient, Observation
 
-class RiskScoringEngine:
-    def __init__(self):
-        # Baseline model weights (Illustrative weights calibrated for synthetic triage)
-        # TODO: CLINICAL VALIDATION REQUIRED
-        self.weights = {
-            "hr_dev": 0.22,
-            "rr_dev": 0.25,
-            "spo2_dev": 0.28,
-            "bp_dev": 0.15,
-            "temp_dev": 0.10,
+class MLRiskScoringEngine:
+    def __init__(self, artifact_dir: str = "ml/artifacts"):
+        self.artifact_dir = artifact_dir
+        self.calibrated_model = None
+        self.base_pipeline = None
+        self.model_version = "calibrated-lr-v1.0.0-synthetic"
+        self._load_artifacts()
+
+    def _load_artifacts(self):
+        calibrated_path = os.path.join(self.artifact_dir, "calibrated_model.joblib")
+        base_path = os.path.join(self.artifact_dir, "base_pipeline.joblib")
+
+        # Check relative to backend or root
+        if not os.path.exists(calibrated_path):
+            alt_cal = os.path.join("..", self.artifact_dir, "calibrated_model.joblib")
+            alt_base = os.path.join("..", self.artifact_dir, "base_pipeline.joblib")
+            if os.path.exists(alt_cal):
+                calibrated_path = alt_cal
+                base_path = alt_base
+
+        if os.path.exists(calibrated_path) and os.path.exists(base_path):
+            try:
+                self.calibrated_model = joblib.load(calibrated_path)
+                self.base_pipeline = joblib.load(base_path)
+                print(f"[AcuityFlow ML] Loaded runtime model artifacts from {calibrated_path}")
+            except Exception as e:
+                print(f"[AcuityFlow ML] Error loading artifacts: {e}. Fallback to parametric baseline.")
+        else:
+            print("[AcuityFlow ML] Artifacts not found. Using fallback scoring.")
+
+    def _build_feature_row(self, patient: Patient, obs: Optional[Observation]) -> pd.DataFrame:
+        """Constructs a single-row DataFrame aligned with training schema."""
+        row = {
+            "age": patient.age_years if patient.age_years is not None else np.nan,
+            "heart_rate": obs.heart_rate if obs and obs.heart_rate is not None else np.nan,
+            "respiratory_rate": obs.respiratory_rate if obs and obs.respiratory_rate is not None else np.nan,
+            "systolic_bp": obs.systolic_bp if obs and obs.systolic_bp is not None else np.nan,
+            "diastolic_bp": obs.diastolic_bp if obs and obs.diastolic_bp is not None else np.nan,
+            "spo2": obs.spo2 if obs and obs.spo2 is not None else np.nan,
+            "temperature_c": obs.temperature_c if obs and obs.temperature_c is not None else np.nan,
+            "pain_score": patient.pain_score if patient.pain_score is not None else np.nan,
+            "symptom_duration_mins": patient.symptom_duration_minutes if patient.symptom_duration_minutes is not None else np.nan,
+            "profile": patient.population_profile or "adult",
+            "history_available": int(bool(patient.history_available)) if patient.history_available is not None else 1,
+            "first_time_patient": int(bool(patient.first_time_patient)) if patient.first_time_patient is not None else 0
+        }
+        return pd.DataFrame([row])
+
+    def predict_risk(self, patient: Patient, latest_obs: Optional[Observation]) -> Dict[str, Any]:
+        """
+        Runs model inference and returns probability, risk score, and top feature signals.
+        """
+        df_row = self._build_feature_row(patient, latest_obs)
+
+        if self.calibrated_model is not None:
+            try:
+                # Calibrated probability of high acuity
+                calibrated_prob = float(self.calibrated_model.predict_proba(df_row)[0, 1])
+                raw_prob = float(self.base_pipeline.predict_proba(df_row)[0, 1]) if self.base_pipeline else calibrated_prob
+                
+                # Scale calibrated probability into a 0..100 continuous risk score with vital adjustment
+                base_risk = calibrated_prob * 100.0
+                
+                # Top feature attribution via Logistic Regression coefficients
+                top_features = self._extract_feature_attributions(df_row)
+                
+                return {
+                    "risk_score": round(base_risk, 1),
+                    "raw_probability": round(raw_prob, 4),
+                    "calibrated_probability": round(calibrated_prob, 4),
+                    "model_version": self.model_version,
+                    "population_profile": patient.population_profile or "adult",
+                    "top_features": top_features
+                }
+            except Exception as e:
+                print(f"[AcuityFlow ML] Prediction error: {e}. Fallback to rule-based estimate.")
+
+        # Robust Fallback if model artifact is unavailable
+        return self._fallback_score(patient, latest_obs)
+
+    def _extract_feature_attributions(self, df_row: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Extracts top positive risk contributors from linear weights."""
+        if not self.base_pipeline or not hasattr(self.base_pipeline.named_steps["clf"], "coef_"):
+            return []
+
+        try:
+            clf = self.base_pipeline.named_steps["clf"]
+            prep = self.base_pipeline.named_steps["prep"]
+            X_trans = prep.transform(df_row)[0]
+            feature_names = prep.get_feature_names_out()
+            coefs = clf.coef_[0]
+
+            contributions = []
+            for name, val, coef in zip(feature_names, X_trans, coefs):
+                impact = float(val * coef)
+                if impact > 0.1:  # Only report signals that increase risk
+                    clean_name = name.replace("num__", "").replace("cat__", "").replace("_", " ").title()
+                    contributions.append({
+                        "feature": clean_name,
+                        "impact_weight": round(impact, 2)
+                    })
+
+            contributions.sort(key=lambda x: x["impact_weight"], reverse=True)
+            return contributions[:4]
+        except Exception:
+            return []
+
+    def _fallback_score(self, patient: Patient, obs: Optional[Observation]) -> Dict[str, Any]:
+        """Fallback scoring function if model artifact is missing."""
+        score = 20.0
+        signals = []
+        if obs:
+            if obs.spo2 and obs.spo2 < 94: score += 30; signals.append({"feature": "Low SpO2", "impact_weight": 2.5})
+            if obs.heart_rate and obs.heart_rate > 105: score += 20; signals.append({"feature": "Elevated HR", "impact_weight": 1.8})
+            if obs.respiratory_rate and obs.respiratory_rate > 22: score += 20; signals.append({"feature": "Tachypnea", "impact_weight": 1.5})
+        prob = min(0.99, max(0.01, score / 100.0))
+        return {
+            "risk_score": round(score, 1),
+            "raw_probability": round(prob, 4),
+            "calibrated_probability": round(prob, 4),
+            "model_version": "fallback-parametric-baseline",
+            "population_profile": patient.population_profile or "adult",
+            "top_features": signals
         }
 
-    def _calculate_vital_deviations(self, patient: Patient, obs: Optional[Observation]) -> Tuple[float, List[str], Dict[str, float]]:
-        """
-        Calculates normalized vital deviation penalties according to population profile.
-        """
-        if not obs:
-            return 30.0, ["Vitals unavailable - baseline uncertainty applied"], {}
-
-        profile = patient.population_profile or "adult"
-        thresholds = settings.VITAL_THRESHOLDS.get(profile, settings.VITAL_THRESHOLDS["adult"])
-        
-        raw_risk = 10.0  # Baseline intercept
-        contributions = {}
-        signals = []
-
-        # Heart Rate
-        if obs.heart_rate is not None:
-            if obs.heart_rate > thresholds["hr_warning_high"]:
-                dev = min(1.0, (obs.heart_rate - thresholds["hr_warning_high"]) / 40.0)
-                score = dev * 100 * self.weights["hr_dev"]
-                raw_risk += score
-                contributions["Heart Rate"] = round(score, 1)
-            elif obs.heart_rate < thresholds["hr_warning_low"]:
-                dev = min(1.0, (thresholds["hr_warning_low"] - obs.heart_rate) / 20.0)
-                score = dev * 100 * self.weights["hr_dev"]
-                raw_risk += score
-                contributions["Heart Rate (Low)"] = round(score, 1)
-
-        # Respiratory Rate
-        if obs.respiratory_rate is not None:
-            if obs.respiratory_rate > thresholds["rr_warning_high"]:
-                dev = min(1.0, (obs.respiratory_rate - thresholds["rr_warning_high"]) / 15.0)
-                score = dev * 100 * self.weights["rr_dev"]
-                raw_risk += score
-                contributions["Respiratory Rate"] = round(score, 1)
-            elif obs.respiratory_rate < thresholds["rr_warning_low"]:
-                dev = min(1.0, (thresholds["rr_warning_low"] - obs.respiratory_rate) / 5.0)
-                score = dev * 100 * self.weights["rr_dev"]
-                raw_risk += score
-                contributions["Respiratory Rate (Low)"] = round(score, 1)
-
-        # SpO2
-        if obs.spo2 is not None:
-            if obs.spo2 < 95.0:
-                dev = min(1.0, (95.0 - obs.spo2) / 10.0)
-                score = dev * 100 * self.weights["spo2_dev"]
-                raw_risk += score
-                contributions["SpO2 Hypoxia"] = round(score, 1)
-
-        # Blood Pressure (Systolic)
-        if obs.systolic_bp is not None:
-            if obs.systolic_bp > thresholds["sys_bp_warning_high"]:
-                dev = min(1.0, (obs.systolic_bp - thresholds["sys_bp_warning_high"]) / 50.0)
-                score = dev * 100 * self.weights["bp_dev"]
-                raw_risk += score
-                contributions["Systolic BP High"] = round(score, 1)
-            elif obs.systolic_bp < thresholds["sys_bp_warning_low"]:
-                dev = min(1.0, (thresholds["sys_bp_warning_low"] - obs.systolic_bp) / 30.0)
-                score = dev * 100 * self.weights["bp_dev"]
-                raw_risk += score
-                contributions["Systolic BP Low"] = round(score, 1)
-
-        # Temperature
-        if obs.temperature_c is not None:
-            if obs.temperature_c > thresholds["temp_warning_high"]:
-                dev = min(1.0, (obs.temperature_c - thresholds["temp_warning_high"]) / 2.5)
-                score = dev * 100 * self.weights["temp_dev"]
-                raw_risk += score
-                contributions["Temperature"] = round(score, 1)
-
-        # Pain Score impact
-        if patient.pain_score is not None and patient.pain_score >= 7:
-            pain_add = min(15.0, (patient.pain_score - 6) * 3.5)
-            raw_risk += pain_add
-            contributions["Severe Pain"] = round(pain_add, 1)
-
-        return min(100.0, max(0.0, raw_risk)), signals, contributions
-
-    def score_patient(self, patient: Patient, latest_obs: Optional[Observation], completeness: float) -> Tuple[float, float, Dict[str, float]]:
-        """
-        Calculates risk score (0..100), confidence score (0..100), and feature contributions.
-        Confidence is penalized when data completeness is low or presentation is ambiguous.
-        """
-        raw_risk, _, contributions = self._calculate_vital_deviations(patient, latest_obs)
-
-        # Confidence calculation
-        # Baseline confidence derived from completeness and consistency
-        base_confidence = completeness * 0.7 + 25.0
-        
-        # Penalties for first-time patient or ambiguous presentation
-        if patient.first_time_patient or not patient.history_available:
-            base_confidence -= 15.0
-            
-        cues = [c.lower() for c in (patient.observed_cues or [])]
-        if "confusion" in (patient.symptom_text or "").lower() or any("dizziness" in c for c in cues):
-            base_confidence -= 10.0
-
-        confidence = round(max(20.0, min(95.0, base_confidence)), 1)
-        risk_score = round(raw_risk, 1)
-
-        return risk_score, confidence, contributions
-
-risk_engine = RiskScoringEngine()
+risk_engine = MLRiskScoringEngine()
