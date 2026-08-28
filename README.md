@@ -184,7 +184,7 @@ The deterministic safety layer always executes **before and after** ML inference
 
 ---
 
-## 👁️ AcuityWatch — The Killer Feature
+## 👁️ AcuityWatch
 
 AcuityFlow watches every waiting patient **continuously**, not just at intake.
 
