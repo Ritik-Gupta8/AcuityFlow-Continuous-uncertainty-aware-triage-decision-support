@@ -13,6 +13,7 @@ from app.api.overrides import router as overrides_router
 from app.api.reassessment import router as reassessment_router
 from app.api.simulation import router as simulation_router
 from app.api.audit import router as audit_router
+from app.api.nlp import router as nlp_router
 
 # Initialize database schema
 Base.metadata.create_all(bind=engine)
@@ -45,6 +46,8 @@ app.include_router(overrides_router, prefix="/api")
 app.include_router(reassessment_router, prefix="/api")
 app.include_router(simulation_router, prefix="/api")
 app.include_router(audit_router, prefix="/api")
+app.include_router(nlp_router, prefix="/api")
+app.include_router(nlp_router, prefix="")  # Supports direct POST /nlp/extract-symptoms as well
 
 @app.get("/health")
 def health_check():
