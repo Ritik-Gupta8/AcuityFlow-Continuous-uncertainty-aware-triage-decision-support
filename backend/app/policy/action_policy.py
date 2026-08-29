@@ -136,11 +136,18 @@ def evaluate_patient_triage(patient: Patient, latest_obs: Optional[Observation])
             f"Uncertainty flag: Workflow confidence is {confidence}% (model certainty {uncertainty.model_certainty}%, completeness {uncertainty.data_reliability}%). Escalated for clinician review to prevent under-triage."
         )
 
-    # Rule 4: Incomplete Data on Moderate+ Risk -> ESCALATE
-    elif completeness < settings.MIN_COMPLETENESS_THRESHOLD and base_priority in ["MODERATE", "HIGH", "IMMEDIATE"]:
+    # Rule 4: Incomplete Data on Concerning / Moderate+ Presentation -> ESCALATE (Never guess LOW)
+    elif completeness < settings.MIN_COMPLETENESS_THRESHOLD and (
+        base_priority in ["MODERATE", "HIGH", "IMMEDIATE"]
+        or (patient.pain_score is not None and patient.pain_score >= 8)
+        or any("distress" in c.lower() or "diaphoret" in c.lower() for c in (patient.observed_cues or []))
+        or patient.first_time_patient
+    ):
         action = "ESCALATE"
+        if base_priority == "LOW":
+            final_priority = "REVIEW"
         explanation_parts.append(
-            f"Data completeness is {completeness}%. Missing key intake fields for non-low risk presentation. Escalated for clinical confirmation."
+            f"Incomplete intake data ({completeness}%) with active clinical cues. Missing vital signs prevented definitive scoring; escalated for immediate clinician review."
         )
 
     # Rule 5: Standard safe recommendation
