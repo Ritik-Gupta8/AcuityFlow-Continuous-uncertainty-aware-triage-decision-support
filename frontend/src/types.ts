@@ -88,3 +88,11 @@ export interface SimulationStatus {
   time_offset_minutes: number;
   disclaimer: string;
 }
+
+export interface SymptomExtractionResult {
+  symptoms: string[];
+  duration_minutes?: number | null;
+  extracted_by: string;
+  is_ambiguous: boolean;
+}
+

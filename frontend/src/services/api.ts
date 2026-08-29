@@ -99,5 +99,31 @@ export const api = {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to fetch audit trail');
     return res.json();
+  },
+
+  async extractSymptoms(text: string): Promise<{ symptoms: string[]; duration_minutes?: number | null; extracted_by: string; is_ambiguous: boolean }> {
+    const res = await fetch(`${API_BASE}/nlp/extract-symptoms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to extract symptoms' }));
+      throw new Error(err.detail || 'Failed to extract symptoms');
+    }
+    return res.json();
+  },
+
+  async updatePatientSymptoms(patientId: string, payload: { symptoms: string[]; narrative_text?: string; duration_minutes?: number }) {
+    const res = await fetch(`${API_BASE}/patients/${patientId}/symptoms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update symptoms' }));
+      throw new Error(err.detail || 'Failed to update symptoms');
+    }
+    return res.json();
   }
 };
