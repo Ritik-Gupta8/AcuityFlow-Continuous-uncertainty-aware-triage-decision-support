@@ -51,12 +51,14 @@ def compute_uncertainty_breakdown(
     """
     factors = []
 
-    # 1. Model Certainty (Distance from decision boundary 0.5)
-    # Range 0..100. If prob is 0.95 or 0.05 -> certainty 90%. If prob is 0.50 -> certainty 0%.
-    prob_dist = abs(calibrated_prob - 0.5)
-    model_certainty = round(min(100.0, prob_dist * 200.0), 1)
-    if model_certainty < 40.0:
-        factors.append(f"Model uncertainty elevated: Calibrated probability ({round(calibrated_prob, 2)}) is close to classification threshold (0.50).")
+    # 1. Model Certainty (Distance from decision boundary 0.5, gated by data completeness)
+    # If 60% of vitals are missing/imputed, the model's output cannot be treated as highly certain
+    raw_certainty = min(100.0, abs(calibrated_prob - 0.5) * 200.0)
+    completeness_factor = max(0.2, min(1.0, completeness / 100.0))
+    model_certainty = round(raw_certainty * completeness_factor, 1)
+    
+    if model_certainty < 50.0:
+        factors.append(f"Model certainty is limited ({model_certainty}%): Probability ({round(calibrated_prob, 2)}) evaluated on incomplete/imputed inputs.")
 
     # 2. Data Reliability (Completeness)
     data_reliability = round(completeness, 1)
@@ -75,6 +77,12 @@ def compute_uncertainty_breakdown(
         if any(w in symptom_text or any(w in c for c in cues) for w in ["dizziness", "confusion", "unclear", "malaise"]):
             consistency_score -= 20.0
             factors.append("Presentation contains ambiguous or non-specific clinical symptoms.")
+
+        # Check for severe pain / acute distress with missing vitals
+        if (patient.pain_score is not None and patient.pain_score >= 8) or any("distress" in c or "diaphoret" in c for c in cues):
+            if completeness < 65.0:
+                consistency_score -= 25.0
+                factors.append("Severe clinical distress or acute pain reported with incomplete vital signs.")
 
     # 4. Population-Profile Support
     profile_support_score = 95.0
