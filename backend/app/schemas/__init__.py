@@ -4,7 +4,8 @@ from app.schemas.schemas import (
     TriageResultOut,
     ClinicianDecisionCreate, ClinicianDecisionOut,
     AuditEventOut,
-    AdvanceTimeRequest, SurgeToggleRequest, InjectVitalsRequest
+    AdvanceTimeRequest, SurgeToggleRequest, InjectVitalsRequest,
+    SymptomExtractionRequest, SymptomExtractionResponse, PatientSymptomsUpdate
 )
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "TriageResultOut",
     "ClinicianDecisionCreate", "ClinicianDecisionOut",
     "AuditEventOut",
-    "AdvanceTimeRequest", "SurgeToggleRequest", "InjectVitalsRequest"
+    "AdvanceTimeRequest", "SurgeToggleRequest", "InjectVitalsRequest",
+    "SymptomExtractionRequest", "SymptomExtractionResponse", "PatientSymptomsUpdate"
 ]

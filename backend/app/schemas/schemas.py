@@ -133,10 +133,28 @@ class AuditEventOut(BaseModel):
 
 # --- Simulation & Reassessment Schemas ---
 class AdvanceTimeRequest(BaseModel):
-    minutes: int = 10
+    minutes: int = Field(15, ge=1, le=120)
 
 class SurgeToggleRequest(BaseModel):
     surge_active: bool
+
+SimulationAdvanceTime = AdvanceTimeRequest
+SimulationSurgeToggle = SurgeToggleRequest
+
+# --- NLP Symptom Extraction Schemas ---
+class SymptomExtractionRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=1000, description="Raw narrative presentation text")
+
+class SymptomExtractionResponse(BaseModel):
+    symptoms: List[str]
+    duration_minutes: Optional[int] = None
+    extracted_by: str = "local-rule-parser"
+    is_ambiguous: bool = False
+
+class PatientSymptomsUpdate(BaseModel):
+    symptoms: List[str]
+    narrative_text: Optional[str] = None
+    duration_minutes: Optional[int] = None
 
 class InjectVitalsRequest(BaseModel):
     patient_id: str
