@@ -21,9 +21,71 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
   const [triageResult, setTriageResult] = useState<TriageResult | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Free-text Symptom Extraction State
+  const [freeText, setFreeText] = useState(patient.symptom_text || '');
+  const [extractedSymptoms, setExtractedSymptoms] = useState<string[]>([]);
+  const [extractedDuration, setExtractedDuration] = useState<number | null>(null);
+  const [, setExtractedBy] = useState<string | null>(null);
+  const [isAmbiguous, setIsAmbiguous] = useState<boolean>(false);
+  const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
+  const [newCustomSymptom, setNewCustomSymptom] = useState('');
+  const [appliedSuccess, setAppliedSuccess] = useState(false);
+
   useEffect(() => {
     loadTriageResult();
+    setFreeText(patient.symptom_text || '');
+    setExtractedSymptoms([]);
+    setExtractionError(null);
   }, [patient.patient_id]);
+
+  const handleExtractSymptoms = async () => {
+    if (!freeText.trim()) return;
+    try {
+      setIsExtracting(true);
+      setExtractionError(null);
+      const res = await api.extractSymptoms(freeText.trim());
+      setExtractedSymptoms(res.symptoms);
+      setExtractedDuration(res.duration_minutes || null);
+      setExtractedBy(res.extracted_by);
+      setIsAmbiguous(res.is_ambiguous);
+    } catch (err: any) {
+      setExtractionError(err.message || 'Failed to extract symptoms');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const removeSymptomTag = (idx: number) => {
+    setExtractedSymptoms(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const addCustomSymptom = () => {
+    const trimmed = newCustomSymptom.trim();
+    if (trimmed && !extractedSymptoms.includes(trimmed)) {
+      setExtractedSymptoms(prev => [...prev, trimmed]);
+      setNewCustomSymptom('');
+    }
+  };
+
+  const handleConfirmAndApply = async () => {
+    try {
+      await api.updatePatientSymptoms(patient.patient_id, {
+        symptoms: extractedSymptoms,
+        narrative_text: freeText,
+        duration_minutes: extractedDuration || undefined
+      });
+      patient.observed_cues = extractedSymptoms;
+      patient.symptom_text = freeText;
+      if (extractedDuration) patient.symptom_duration_minutes = extractedDuration;
+      setAppliedSuccess(true);
+      setTimeout(() => setAppliedSuccess(false), 4000);
+      await loadTriageResult();
+      onDecisionSubmitted();
+    } catch (err: any) {
+      alert(err.message || 'Failed to apply structured symptoms');
+    }
+  };
 
   const loadTriageResult = async () => {
     try {
@@ -152,10 +214,149 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
 
             {patient.observed_cues && patient.observed_cues.length > 0 && (
               <div style={{ marginTop: 8 }}>
-                <span style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Observed Clinical Cues: </span>
+                <span style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Active Clinical Cues: </span>
                 <span style={{ fontSize: '0.8rem', color: '#fca5a5', fontWeight: 600 }}>
                   {patient.observed_cues.join(', ')}
                 </span>
+              </div>
+            )}
+          </div>
+
+          {/* Free-Text Presentation & Symptom Extraction */}
+          <div style={{ background: '#1e293b', padding: 14, borderRadius: 10, border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#93c5fd', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FileText size={15} style={{ color: '#38bdf8' }} />
+                Free-Text Presentation & Structured Extraction
+              </span>
+              <span style={{ fontSize: '0.68rem', color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: 4 }}>
+                Source: local-rule-parser (bounded)
+              </span>
+            </div>
+
+            <textarea
+              style={{
+                width: '100%',
+                background: '#0f172a',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: 6,
+                padding: '8px 10px',
+                color: '#f1f5f9',
+                fontSize: '0.82rem',
+                minHeight: '56px',
+                resize: 'vertical',
+                boxSizing: 'border-box'
+              }}
+              placeholder="Enter raw narrative (e.g. Patient reports dizziness and weakness since this morning)..."
+              value={freeText}
+              onChange={(e) => setFreeText(e.target.value)}
+            />
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: '4px 12px', fontSize: '0.78rem' }}
+                disabled={isExtracting || !freeText.trim()}
+                onClick={handleExtractSymptoms}
+              >
+                {isExtracting ? 'Extracting...' : 'Structure Symptoms'}
+              </button>
+
+              {extractionError && (
+                <span style={{ color: '#f87171', fontSize: '0.74rem' }}>{extractionError}</span>
+              )}
+
+              {appliedSuccess && (
+                <span style={{ color: '#4ade80', fontSize: '0.74rem' }}>✓ Clinical cues updated & triage refreshed!</span>
+              )}
+            </div>
+
+            {/* Extracted Suggestions Card */}
+            {extractedSymptoms.length > 0 && (
+              <div style={{ marginTop: 12, background: '#0f172a', padding: 10, borderRadius: 8, border: '1px solid rgba(148, 163, 184, 0.2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={{ fontSize: '0.74rem', color: '#93c5fd', fontWeight: 600 }}>
+                    Extracted Symptom Suggestions (Review & Confirm):
+                  </span>
+                  {isAmbiguous && (
+                    <span style={{ fontSize: '0.68rem', color: '#fbbf24', background: 'rgba(245,158,11,0.15)', padding: '2px 6px', borderRadius: 4 }}>
+                      ⚠️ Ambiguous Cues Flagged
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  {extractedSymptoms.map((sym, idx) => (
+                    <span
+                      key={idx}
+                      style={{
+                        background: '#1e3a8a',
+                        color: '#bfdbfe',
+                        padding: '3px 8px',
+                        borderRadius: 14,
+                        fontSize: '0.74rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4
+                      }}
+                    >
+                      {sym}
+                      <button
+                        type="button"
+                        onClick={() => removeSymptomTag(idx)}
+                        style={{ background: 'none', border: 'none', color: '#93c5fd', cursor: 'pointer', padding: 0, fontSize: '0.75rem' }}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                {/* Add Custom Tag */}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <input
+                    type="text"
+                    placeholder="Add manual symptom tag..."
+                    value={newCustomSymptom}
+                    onChange={(e) => setNewCustomSymptom(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomSymptom(); } }}
+                    style={{
+                      flex: 1,
+                      background: '#1e293b',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 4,
+                      padding: '4px 8px',
+                      color: '#fff',
+                      fontSize: '0.74rem'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomSymptom}
+                    style={{ background: '#334155', border: 'none', color: '#cbd5e1', borderRadius: 4, padding: '4px 8px', fontSize: '0.72rem', cursor: 'pointer' }}
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                {extractedDuration != null && (
+                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: 8 }}>
+                    Parsed Duration: <strong>{extractedDuration} minutes</strong>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{ width: '100%', padding: '6px', fontSize: '0.78rem' }}
+                  onClick={handleConfirmAndApply}
+                >
+                  Confirm & Apply to Clinical Cues
+                </button>
+                <div style={{ fontSize: '0.66rem', color: '#64748b', textAlign: 'center', marginTop: 4 }}>
+                  Feeds structured symptoms into safety gate & ML risk engine without assigning autonomous priority.
+                </div>
               </div>
             )}
           </div>
