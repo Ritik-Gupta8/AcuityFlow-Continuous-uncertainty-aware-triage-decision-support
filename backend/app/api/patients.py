@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.entities import Patient, Observation, TriageResult, AuditEvent
-from app.schemas.schemas import PatientOut, ObservationCreate, ObservationOut, TriageResultOut
+from app.schemas.schemas import PatientOut, ObservationCreate, ObservationOut, TriageResultOut, PatientSymptomsUpdate
 from app.policy.action_policy import evaluate_patient_triage
 from app.reassessment.monitor import reassessment_monitor
 
@@ -125,3 +125,71 @@ def get_latest_triage_result(patient_id: str, db: Session = Depends(get_db)):
     if not result:
         raise HTTPException(status_code=404, detail="No triage result found for patient")
     return result
+
+@router.post("/{patient_id}/symptoms", response_model=PatientOut)
+def update_patient_symptoms(
+    patient_id: str,
+    payload: PatientSymptomsUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Updates patient clinical cues with confirmed extracted symptoms.
+    Feeds validated structured data directly into existing deterministic & ML triage pipeline.
+    """
+    patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    patient.observed_cues = payload.symptoms
+    if payload.narrative_text is not None:
+        patient.symptom_text = payload.narrative_text
+    if payload.duration_minutes is not None:
+        patient.symptom_duration_minutes = payload.duration_minutes
+
+    latest_obs = db.query(Observation).filter(Observation.patient_id == patient_id).order_by(Observation.timestamp.desc()).first()
+
+    # Re-evaluate triage recommendation with confirmed structured symptoms
+    eval_result = evaluate_patient_triage(patient, latest_obs)
+    patient.current_priority = eval_result.priority
+    patient.current_action = eval_result.action
+    patient.current_confidence = eval_result.confidence_score
+    patient.current_risk_score = eval_result.risk_score
+
+    # Re-evaluate continuous reassessment monitor
+    needs_reassess, reasons, _ = reassessment_monitor.evaluate_patient_reassessment(patient)
+    patient.needs_reassessment = needs_reassess
+    patient.reassessment_reasons = reasons
+
+    triage_record = TriageResult(
+        result_id=f"TR-{uuid.uuid4().hex[:8]}",
+        patient_id=patient_id,
+        timestamp=datetime.now(timezone.utc),
+        risk_score=eval_result.risk_score,
+        confidence_score=eval_result.confidence_score,
+        data_completeness=eval_result.data_completeness,
+        priority=eval_result.priority,
+        action=eval_result.action,
+        safety_flags=eval_result.safety_flags,
+        key_signals=eval_result.key_signals,
+        missing_information=eval_result.missing_information,
+        explanation=eval_result.explanation,
+        population_profile=eval_result.population_profile
+    )
+    db.add(triage_record)
+
+    audit = AuditEvent(
+        audit_id=f"AUD-{uuid.uuid4().hex[:8]}",
+        timestamp=datetime.now(timezone.utc),
+        actor_id="nurse-101",
+        actor_role="nurse",
+        event_type="structured_symptoms_confirmed",
+        patient_id=patient_id,
+        recommendation=eval_result.priority,
+        confidence=eval_result.confidence_score,
+        decision=eval_result.action,
+        details={"confirmed_symptoms": payload.symptoms, "duration_minutes": payload.duration_minutes}
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(patient)
+    return patient
