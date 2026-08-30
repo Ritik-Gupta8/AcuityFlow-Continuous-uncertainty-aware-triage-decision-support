@@ -18,6 +18,9 @@ class MLRiskScoringEngine:
         self.calibrated_model = None
         self.base_pipeline = None
         self.model_version = "calibrated-lr-v1.0.0-synthetic"
+        self.model_status = "FALLBACK"
+        self.model_available = False
+        self.model_source = "deterministic-fallback"
         self._load_artifacts()
 
     def _load_artifacts(self):
@@ -36,10 +39,26 @@ class MLRiskScoringEngine:
             try:
                 self.calibrated_model = joblib.load(calibrated_path)
                 self.base_pipeline = joblib.load(base_path)
+                self.model_status = "CALIBRATED_ML"
+                self.model_available = True
+                self.model_source = "calibrated_model"
+                self.model_version = "calibrated-lr-v1.0.0-synthetic"
                 print(f"[AcuityFlow ML] Loaded runtime model artifacts from {calibrated_path}")
             except Exception as e:
+                self.calibrated_model = None
+                self.base_pipeline = None
+                self.model_status = "FALLBACK"
+                self.model_available = False
+                self.model_source = "deterministic-fallback"
+                self.model_version = "fallback-parametric-baseline"
                 print(f"[AcuityFlow ML] Error loading artifacts: {e}. Fallback to parametric baseline.")
         else:
+            self.calibrated_model = None
+            self.base_pipeline = None
+            self.model_status = "FALLBACK"
+            self.model_available = False
+            self.model_source = "deterministic-fallback"
+            self.model_version = "fallback-parametric-baseline"
             print("[AcuityFlow ML] Artifacts not found. Using fallback scoring.")
 
     def _build_feature_row(self, patient: Patient, obs: Optional[Observation]) -> pd.DataFrame:
@@ -82,6 +101,9 @@ class MLRiskScoringEngine:
                     "risk_score": round(base_risk, 1),
                     "raw_probability": round(raw_prob, 4),
                     "calibrated_probability": round(calibrated_prob, 4),
+                    "model_status": "CALIBRATED_ML",
+                    "model_available": True,
+                    "model_source": "calibrated_model",
                     "model_version": self.model_version,
                     "population_profile": patient.population_profile or "adult",
                     "top_features": top_features
@@ -132,6 +154,9 @@ class MLRiskScoringEngine:
             "risk_score": round(score, 1),
             "raw_probability": round(prob, 4),
             "calibrated_probability": round(prob, 4),
+            "model_status": "FALLBACK",
+            "model_available": False,
+            "model_source": "deterministic-fallback",
             "model_version": "fallback-parametric-baseline",
             "population_profile": patient.population_profile or "adult",
             "top_features": signals

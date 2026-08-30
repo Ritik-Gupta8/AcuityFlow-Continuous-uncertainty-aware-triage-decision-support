@@ -7,7 +7,8 @@ All names, vitals, and narratives are purely synthetic and fictional.
 from datetime import datetime, timezone, timedelta
 from typing import List
 from sqlalchemy.orm import Session
-from app.models.entities import Patient, Observation, TriageResult, ClinicianDecision, AuditEvent
+from app.models.entities import Patient, Observation, TriageResult, ClinicianDecision, AuditEvent, User
+from app.core.security import hash_password
 from app.policy.action_policy import evaluate_patient_triage
 from app.reassessment.monitor import reassessment_monitor
 
@@ -454,7 +455,25 @@ def get_seed_patients_data() -> List[dict]:
     ]
 
 def seed_database(db: Session):
-    """Populates the database with 24 test cases and generates initial evaluation results."""
+    """Populates the database with 24 test cases and default RBAC accounts."""
+    # Seed default demonstration users with secure PBKDF2 hashes
+    if db.query(User).count() == 0:
+        demo_users = [
+            ("usr-nurse-101", "nurse101", "Password@123", "nurse"),
+            ("usr-supervisor-101", "supervisor101", "Password@123", "supervisor"),
+            ("usr-admin-101", "admin101", "Password@123", "admin"),
+        ]
+        for u_id, u_name, u_pass, u_role in demo_users:
+            u = User(
+                user_id=u_id,
+                username=u_name,
+                password_hash=hash_password(u_pass),
+                role=u_role,
+                is_active=True
+            )
+            db.add(u)
+        db.commit()
+
     # Check if patients already exist
     if db.query(Patient).count() > 0:
         return
@@ -541,7 +560,12 @@ def seed_database(db: Session):
             key_signals=eval_result.key_signals,
             missing_information=eval_result.missing_information,
             explanation=eval_result.explanation,
-            population_profile=eval_result.population_profile
+            population_profile=eval_result.population_profile,
+            policy_version="v2.0.0-prototype",
+            model_version=eval_result.model_version,
+            model_status=eval_result.model_status,
+            model_available=eval_result.model_available,
+            model_source=eval_result.model_source
         )
         db.add(triage_record)
 
@@ -708,7 +732,12 @@ def populate_surge_patients(db: Session):
             key_signals=eval_result.key_signals,
             missing_information=eval_result.missing_information,
             explanation=eval_result.explanation,
-            population_profile=eval_result.population_profile
+            population_profile=eval_result.population_profile,
+            policy_version="v2.0.0-prototype",
+            model_version=eval_result.model_version,
+            model_status=eval_result.model_status,
+            model_available=eval_result.model_available,
+            model_source=eval_result.model_source
         )
         db.add(triage_record)
 

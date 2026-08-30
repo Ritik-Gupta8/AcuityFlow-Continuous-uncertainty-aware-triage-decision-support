@@ -101,6 +101,9 @@ class TriageResult(Base):
     population_profile = Column(String, nullable=False)
     policy_version = Column(String, default="v2.0.0-prototype")
     model_version = Column(String, default="ml-baseline-v1")
+    model_status = Column(String, default="CALIBRATED_ML")
+    model_available = Column(Boolean, default=True)
+    model_source = Column(String, default="calibrated_model")
 
     patient = relationship("Patient", back_populates="triage_results")
 
@@ -140,3 +143,13 @@ class AuditEvent(Base):
     
     policy_version = Column(String, default="v2.0.0-prototype")
     model_version = Column(String, default="ml-baseline-v1")
+
+class User(Base):
+    __tablename__ = "users"
+
+    user_id = Column(String, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, nullable=False)  # nurse, supervisor, admin
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

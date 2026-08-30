@@ -31,7 +31,11 @@ class TriageDecisionResult:
         explanation: str,
         population_profile: str,
         uncertainty_details: Dict[str, Any],
-        model_details: Dict[str, Any]
+        model_details: Dict[str, Any],
+        model_status: str = "CALIBRATED_ML",
+        model_available: bool = True,
+        model_source: str = "calibrated_model",
+        model_version: str = "calibrated-lr-v1.0.0-synthetic"
     ):
         self.risk_score = risk_score
         self.confidence_score = confidence_score
@@ -45,6 +49,10 @@ class TriageDecisionResult:
         self.population_profile = population_profile
         self.uncertainty_details = uncertainty_details
         self.model_details = model_details
+        self.model_status = model_status
+        self.model_available = model_available
+        self.model_source = model_source
+        self.model_version = model_version
 
 def _map_risk_to_priority(risk_score: float) -> str:
     """Maps continuous risk score 0..100 to illustrative priority band."""
@@ -82,6 +90,11 @@ def evaluate_patient_triage(patient: Patient, latest_obs: Optional[Observation])
     risk_score = ml_output["risk_score"]
     calibrated_prob = ml_output["calibrated_probability"]
     top_features = ml_output.get("top_features", [])
+    model_status = ml_output.get("model_status", "CALIBRATED_ML")
+    model_available = ml_output.get("model_available", True)
+    model_source = ml_output.get("model_source", "calibrated_model")
+    model_version = ml_output.get("model_version", "calibrated-lr-v1.0.0-synthetic")
+    source_label = "calibrated ML model" if model_available else "deterministic fallback policy"
 
     # 5. Multi-Factor Uncertainty Engine
     uncertainty: UncertaintyBreakdown = compute_uncertainty_breakdown(
@@ -158,14 +171,14 @@ def evaluate_patient_triage(patient: Patient, latest_obs: Optional[Observation])
         final_priority = "MODERATE"
         action = "RECOMMEND"
         explanation_parts.append(
-            f"Risk estimate {risk_score}/100 from calibrated ML model. Clinical complaint indicates moderate cardiac/chest symptom monitoring required on 15m reassessment schedule."
+            f"Risk estimate {risk_score}/100 from {source_label}. Clinical complaint indicates moderate cardiac/chest symptom monitoring required on 15m reassessment schedule."
         )
 
     # Rule 6: Standard safe recommendation
     else:
         action = "RECOMMEND"
         explanation_parts.append(
-            f"Risk estimate {risk_score}/100 from calibrated ML model on {profile} profile. Workflow confidence is {confidence}%."
+            f"Risk estimate {risk_score}/100 from {source_label} on {profile} profile. Workflow confidence is {confidence}%."
         )
 
     full_explanation = " ".join(explanation_parts)
@@ -182,5 +195,9 @@ def evaluate_patient_triage(patient: Patient, latest_obs: Optional[Observation])
         explanation=full_explanation,
         population_profile=profile,
         uncertainty_details=uncertainty.to_dict(),
-        model_details=ml_output
+        model_details=ml_output,
+        model_status=model_status,
+        model_available=model_available,
+        model_source=model_source,
+        model_version=model_version
     )
