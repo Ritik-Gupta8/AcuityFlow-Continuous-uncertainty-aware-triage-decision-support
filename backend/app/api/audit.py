@@ -1,6 +1,14 @@
 """
 Audit Trail API.
 Exposes FHIR-inspired security and clinical decision audit log events.
+
+Architecture Note:
+- Application/API Layer: Strictly read-only query interface. Audit events are recorded
+  exclusively via internal domain services (triage, clinician override, vital updates,
+  and simulation events). No update, edit, or delete endpoints exist.
+- Immutability Disclaimer: In this prototype, append-only behavior is enforced at the
+  application and API layers. Production deployment requires database-level WORM
+  (Write Once Read Many) storage or cryptographically verifiable ledger audit logging.
 """
 
 from typing import List
