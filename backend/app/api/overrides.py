@@ -27,13 +27,18 @@ def record_clinician_decision(
     if decision_in.clinician_action == "override" and not decision_in.override_reason:
         raise HTTPException(status_code=400, detail="An override reason is required when overriding AI recommendation.")
 
+    # 1. Source of Truth: Read immutable AI recommendation
+    ai_priority_val = patient.ai_priority or "MODERATE"
+    ai_confidence_val = patient.ai_confidence if patient.ai_confidence is not None else patient.current_confidence
+    ai_risk_score_val = patient.ai_risk_score if patient.ai_risk_score is not None else patient.current_risk_score
+
     decision_record = ClinicianDecision(
         decision_id=f"DEC-{uuid.uuid4().hex[:8]}",
         patient_id=patient_id,
         clinician_id=decision_in.clinician_id,
         actor_role=decision_in.actor_role,
-        ai_priority=patient.current_priority,
-        ai_confidence=patient.current_confidence,
+        ai_priority=ai_priority_val,
+        ai_confidence=ai_confidence_val,
         clinician_action=decision_in.clinician_action,
         final_priority=decision_in.final_priority,
         override_reason=decision_in.override_reason,
@@ -42,14 +47,30 @@ def record_clinician_decision(
     )
     db.add(decision_record)
 
-    # Update patient's active priority
-    old_priority = patient.current_priority
-    patient.current_priority = decision_in.final_priority
-    if decision_in.clinician_action == "accept":
+    # 2. Update human decision and operational effective priority without mutating ai_priority!
+    if decision_in.clinician_action == "override":
+        patient.clinician_decision = decision_in.final_priority
+        patient.clinician_action = "override"
+        patient.override_reason = decision_in.override_reason
+        patient.effective_priority = decision_in.final_priority
+        patient.current_priority = decision_in.final_priority
+    elif decision_in.clinician_action == "accept":
+        patient.clinician_decision = ai_priority_val
+        patient.clinician_action = "accept"
+        patient.override_reason = None
+        patient.effective_priority = ai_priority_val
+        patient.current_priority = ai_priority_val
         patient.needs_reassessment = False
         patient.reassessment_reasons = []
+        patient.reassessment_state = "NORMAL"
+    elif decision_in.clinician_action == "escalate":
+        patient.clinician_decision = decision_in.final_priority
+        patient.clinician_action = "escalate"
+        patient.override_reason = decision_in.override_reason or "Clinician manual escalation"
+        patient.effective_priority = decision_in.final_priority
+        patient.current_priority = decision_in.final_priority
 
-    # Record to Audit Log (FHIR-inspired structure)
+    # 3. Record to Audit Log (FHIR-inspired structure, preserving original AI recommendation)
     audit = AuditEvent(
         audit_id=f"AUD-{uuid.uuid4().hex[:8]}",
         timestamp=datetime.now(timezone.utc),
@@ -57,16 +78,25 @@ def record_clinician_decision(
         actor_role=decision_in.actor_role,
         event_type="override" if decision_in.clinician_action == "override" else "clinician_decision",
         patient_id=patient_id,
-        recommendation=old_priority,
-        confidence=patient.current_confidence,
+        recommendation=ai_priority_val,
+        confidence=ai_confidence_val,
         decision=decision_in.final_priority,
         override_reason=decision_in.override_reason,
         details={
+            "ai_priority": ai_priority_val,
+            "ai_risk_score": ai_risk_score_val,
+            "ai_confidence": ai_confidence_val,
+            "clinician_decision": decision_in.final_priority,
+            "effective_priority": patient.effective_priority,
+            "override_reason": decision_in.override_reason,
             "action": decision_in.clinician_action,
             "clinician_note": decision_in.clinician_note
-        }
+        },
+        policy_version="v2.0.0-prototype",
+        model_version="ml-baseline-v1"
     )
     db.add(audit)
     db.commit()
+    db.refresh(decision_record)
 
     return decision_record

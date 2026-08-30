@@ -73,7 +73,16 @@ def add_patient_observation(
 
     # Re-evaluate triage recommendation
     eval_result = evaluate_patient_triage(patient, new_obs)
-    patient.current_priority = eval_result.priority
+    patient.ai_priority = eval_result.priority
+    patient.ai_workflow_action = eval_result.action
+    patient.ai_confidence = eval_result.confidence_score
+    patient.ai_risk_score = eval_result.risk_score
+    if patient.clinician_action != "override":
+        patient.effective_priority = eval_result.priority
+        patient.current_priority = eval_result.priority
+    else:
+        patient.effective_priority = patient.clinician_decision
+        patient.current_priority = patient.clinician_decision
     patient.current_action = eval_result.action
     patient.current_confidence = eval_result.confidence_score
     patient.current_risk_score = eval_result.risk_score
@@ -112,7 +121,10 @@ def add_patient_observation(
         recommendation=eval_result.priority,
         confidence=eval_result.confidence_score,
         decision=eval_result.action,
-        details={"reassessment_triggered": needs_reassess, "reasons": reasons}
+        override_reason=None,
+        details={"reassessment_triggered": needs_reassess, "reasons": reasons, "risk_score": eval_result.risk_score},
+        policy_version="v2.0.0-prototype",
+        model_version="ml-baseline-v1"
     )
     db.add(audit)
     db.commit()
@@ -150,7 +162,16 @@ def update_patient_symptoms(
 
     # Re-evaluate triage recommendation with confirmed structured symptoms
     eval_result = evaluate_patient_triage(patient, latest_obs)
-    patient.current_priority = eval_result.priority
+    patient.ai_priority = eval_result.priority
+    patient.ai_workflow_action = eval_result.action
+    patient.ai_confidence = eval_result.confidence_score
+    patient.ai_risk_score = eval_result.risk_score
+    if patient.clinician_action != "override":
+        patient.effective_priority = eval_result.priority
+        patient.current_priority = eval_result.priority
+    else:
+        patient.effective_priority = patient.clinician_decision
+        patient.current_priority = patient.clinician_decision
     patient.current_action = eval_result.action
     patient.current_confidence = eval_result.confidence_score
     patient.current_risk_score = eval_result.risk_score
@@ -187,7 +208,10 @@ def update_patient_symptoms(
         recommendation=eval_result.priority,
         confidence=eval_result.confidence_score,
         decision=eval_result.action,
-        details={"confirmed_symptoms": payload.symptoms, "duration_minutes": payload.duration_minutes}
+        override_reason=None,
+        details={"confirmed_symptoms": payload.symptoms, "duration_minutes": payload.duration_minutes, "risk_score": eval_result.risk_score},
+        policy_version="v2.0.0-prototype",
+        model_version="ml-baseline-v1"
     )
     db.add(audit)
     db.commit()
