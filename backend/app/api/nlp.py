@@ -5,14 +5,19 @@ Does NOT assign triage priority or bypass downstream safety/ML engines.
 TODO: CLINICAL VALIDATION REQUIRED.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.core.security import require_role
+from app.models.entities import User
 from app.schemas.schemas import SymptomExtractionRequest, SymptomExtractionResponse
 from app.ml.symptom_extractor import extract_symptoms_from_narrative
 
 router = APIRouter(prefix="/nlp", tags=["NLP & Symptom Extraction"])
 
 @router.post("/extract-symptoms", response_model=SymptomExtractionResponse)
-def extract_symptoms_endpoint(payload: SymptomExtractionRequest):
+def extract_symptoms_endpoint(
+    payload: SymptomExtractionRequest,
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
+):
     """
     Extracts structured symptoms, duration, and ambiguity flags from free-text presentation.
     Never returns a triage priority. Output is intended as a suggestion for clinician review.
