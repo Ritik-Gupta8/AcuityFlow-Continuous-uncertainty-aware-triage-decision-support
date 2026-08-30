@@ -528,134 +528,173 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
           {loading ? (
             <div>Loading recommendation...</div>
           ) : triageResult ? (
-            <div className="triage-recommendation-panel">
-              <div className="triage-status-bar">
-                <div>
-                  <span style={{ fontSize: '0.72rem', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Decision Support Output
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+            (() => {
+              const isFallback = triageResult.model_available === false || triageResult.model_status === 'FALLBACK';
+              return (
+                <div className="triage-recommendation-panel">
+                  <div className="triage-status-bar">
                     <div>
-                      <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>AI Recommendation</span>
-                      <span className={`priority-tag priority-${triageResult.priority}`} style={{ fontSize: '0.92rem', padding: '4px 12px' }}>
-                        {triageResult.priority}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: '0.72rem', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Decision Support Output
+                        </span>
+                        <span style={{
+                          fontSize: '0.68rem',
+                          background: isFallback ? 'rgba(245, 158, 11, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                          color: isFallback ? '#fcd34d' : '#6ee7b7',
+                          border: `1px solid ${isFallback ? '#f59e0b' : '#10b981'}`,
+                          padding: '1px 6px',
+                          borderRadius: 4,
+                          fontWeight: 700
+                        }}>
+                          MODEL STATUS: {isFallback ? 'FALLBACK MODE' : 'CALIBRATED ML'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+                        <div>
+                          <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>AI Recommendation</span>
+                          <span className={`priority-tag priority-${triageResult.priority}`} style={{ fontSize: '0.92rem', padding: '4px 12px' }}>
+                            {triageResult.priority}
+                          </span>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Workflow Action</span>
+                          <span style={{ fontSize: '0.86rem', fontWeight: 800, color: triageResult.action === 'ESCALATE' ? '#f87171' : '#60a5fa', background: 'rgba(0,0,0,0.3)', padding: '4px 10px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)' }}>
+                            {triageResult.action}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Workflow Action</span>
-                      <span style={{ fontSize: '0.86rem', fontWeight: 800, color: triageResult.action === 'ESCALATE' ? '#f87171' : '#60a5fa', background: 'rgba(0,0,0,0.3)', padding: '4px 10px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)' }}>
-                        {triageResult.action}
-                      </span>
-                    </div>
-                  </div>
-                </div>
 
-                <div style={{ display: 'flex', gap: 16, textAlign: 'right' }}>
-                  <div>
-                    <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>Risk Score (ML)</span>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f1f5f9' }}>
-                      {triageResult.risk_score}<span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8' }}>/100</span>
+                    <div style={{ display: 'flex', gap: 16, textAlign: 'right' }}>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>
+                          {isFallback ? 'Risk Score (Fallback Policy)' : 'Risk Score (ML)'}
+                        </span>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f1f5f9' }}>
+                          {triageResult.risk_score}<span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8' }}>/100</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>Workflow Confidence</span>
+                        <div style={{ fontSize: '1.2rem', fontWeight: 800, color: triageResult.confidence_score < 65 ? '#f87171' : '#6ee7b7' }}>
+                          {triageResult.confidence_score}%
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>Workflow Confidence</span>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 800, color: triageResult.confidence_score < 65 ? '#f87171' : '#6ee7b7' }}>
-                      {triageResult.confidence_score}%
-                    </div>
-                  </div>
-                </div>
-              </div>
 
-              {/* Active Human Override Status */}
-              {patient.clinician_decision && patient.clinician_action === 'override' && (
-                <div style={{ background: 'rgba(37, 99, 235, 0.15)', border: '1px solid #3b82f6', padding: '10px 14px', borderRadius: 8, marginTop: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.78rem', color: '#93c5fd', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      👨‍⚕️ Human Override Applied
+                  {/* Fallback Notice Banner */}
+                  {isFallback && (
+                    <div style={{
+                      fontSize: '0.74rem',
+                      color: '#fbbf24',
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      marginTop: 8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}>
+                      <span>⚠️ Calibrated ML artifact unavailable — using deterministic safety fallback.</span>
+                    </div>
+                  )}
+
+                  {/* Active Human Override Status */}
+                  {patient.clinician_decision && patient.clinician_action === 'override' && (
+                    <div style={{ background: 'rgba(37, 99, 235, 0.15)', border: '1px solid #3b82f6', padding: '10px 14px', borderRadius: 8, marginTop: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.78rem', color: '#93c5fd', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          👨‍⚕️ Human Override Applied
+                        </span>
+                        <span style={{ fontSize: '0.68rem', background: '#2563eb', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
+                          Clinician Authority Active
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div>
+                          <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Clinician Decision:</span>
+                          <strong className={`priority-tag priority-${patient.clinician_decision}`} style={{ fontSize: '0.82rem' }}>
+                            {patient.clinician_decision}
+                          </strong>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Effective Operational Priority:</span>
+                          <strong className={`priority-tag priority-${patient.effective_priority || patient.clinician_decision}`} style={{ fontSize: '0.82rem' }}>
+                            {patient.effective_priority || patient.clinician_decision}
+                          </strong>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: 6 }}>
+                        <strong>Override Reason:</strong> {patient.override_reason}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontStyle: 'italic', marginTop: -4 }}>
+                    * Workflow confidence measures intake data completeness and statistical decision boundary margin; it is a decision-support indicator, not a diagnostic probability.
+                  </div>
+
+                  {/* Decision Source & Population Profile Badge */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem', background: 'rgba(59, 130, 246, 0.1)', padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                    <span style={{ color: '#93c5fd' }}>
+                      <strong>Decision Authority: </strong>
+                      {isFallback ? 'Safety Gate + Deterministic Fallback' : 'Safety Gate + Calibrated Risk Model'}
                     </span>
-                    <span style={{ fontSize: '0.68rem', background: '#2563eb', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
-                      Clinician Authority Active
+                    <span style={{ color: '#cbd5e1', fontWeight: 600 }}>
+                      Profile: <span style={{ textTransform: 'uppercase', color: '#60a5fa' }}>{triageResult.population_profile}</span>
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: 16, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div>
-                      <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Clinician Decision:</span>
-                      <strong className={`priority-tag priority-${patient.clinician_decision}`} style={{ fontSize: '0.82rem' }}>
-                        {patient.clinician_decision}
-                      </strong>
+
+                  {/* Completeness Bar */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: '#9ca3af', marginBottom: 4 }}>
+                      <span>Data Completeness Score</span>
+                      <span>{triageResult.data_completeness}%</span>
                     </div>
-                    <div>
-                      <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Effective Operational Priority:</span>
-                      <strong className={`priority-tag priority-${patient.effective_priority || patient.clinician_decision}`} style={{ fontSize: '0.82rem' }}>
-                        {patient.effective_priority || patient.clinician_decision}
-                      </strong>
+                    <div className="progress-container">
+                      <div
+                        className="progress-bar"
+                        style={{
+                          width: `${triageResult.data_completeness}%`,
+                          background: triageResult.data_completeness < 60 ? '#f59e0b' : '#3b82f6',
+                        }}
+                      />
                     </div>
                   </div>
-                  <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: 6 }}>
-                    <strong>Override Reason:</strong> {patient.override_reason}
+
+                  {/* Explanation Narrative */}
+                  <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, fontSize: '0.82rem', color: '#cbd5e1' }}>
+                    <strong>Triage Rationale: </strong> {triageResult.explanation}
                   </div>
+
+                  {/* Safety Flags & Missing Info */}
+                  {triageResult.safety_flags.length > 0 && (
+                    <div>
+                      <span style={{ fontSize: '0.74rem', color: '#f87171', fontWeight: 700 }}>Active Safety Flags:</span>
+                      <ul style={{ fontSize: '0.78rem', color: '#fca5a5', paddingLeft: 16, marginTop: 2 }}>
+                        {triageResult.safety_flags.map((f, i) => (
+                          <li key={i}>{f}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {triageResult.missing_information.length > 0 && (
+                    <div>
+                      <span style={{ fontSize: '0.74rem', color: '#fbbf24', fontWeight: 700 }}>Known Unknowns / Missing Information:</span>
+                      <ul style={{ fontSize: '0.78rem', color: '#fde68a', paddingLeft: 16, marginTop: 2 }}>
+                        {triageResult.missing_information.map((m, i) => (
+                          <li key={i}>{m}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              )}
-
-              <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontStyle: 'italic', marginTop: -4 }}>
-                * Workflow confidence measures intake data completeness and statistical decision boundary margin; it is a decision-support indicator, not a diagnostic probability.
-              </div>
-
-              {/* Decision Source & Population Profile Badge */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem', background: 'rgba(59, 130, 246, 0.1)', padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                <span style={{ color: '#93c5fd' }}>
-                  <strong>Decision Authority: </strong> Safety Gate + Calibrated Risk Model
-                </span>
-                <span style={{ color: '#cbd5e1', fontWeight: 600 }}>
-                  Profile: <span style={{ textTransform: 'uppercase', color: '#60a5fa' }}>{triageResult.population_profile}</span>
-                </span>
-              </div>
-
-              {/* Completeness Bar */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: '#9ca3af', marginBottom: 4 }}>
-                  <span>Data Completeness Score</span>
-                  <span>{triageResult.data_completeness}%</span>
-                </div>
-                <div className="progress-container">
-                  <div
-                    className="progress-bar"
-                    style={{
-                      width: `${triageResult.data_completeness}%`,
-                      background: triageResult.data_completeness < 60 ? '#f59e0b' : '#3b82f6',
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Explanation Narrative */}
-              <div style={{ background: 'rgba(0,0,0,0.3)', padding: 12, borderRadius: 8, fontSize: '0.82rem', color: '#cbd5e1' }}>
-                <strong>Triage Rationale: </strong> {triageResult.explanation}
-              </div>
-
-              {/* Safety Flags & Missing Info */}
-              {triageResult.safety_flags.length > 0 && (
-                <div>
-                  <span style={{ fontSize: '0.74rem', color: '#f87171', fontWeight: 700 }}>Active Safety Flags:</span>
-                  <ul style={{ fontSize: '0.78rem', color: '#fca5a5', paddingLeft: 16, marginTop: 2 }}>
-                    {triageResult.safety_flags.map((f, i) => (
-                      <li key={i}>{f}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {triageResult.missing_information.length > 0 && (
-                <div>
-                  <span style={{ fontSize: '0.74rem', color: '#fbbf24', fontWeight: 700 }}>Known Unknowns / Missing Information:</span>
-                  <ul style={{ fontSize: '0.78rem', color: '#fde68a', paddingLeft: 16, marginTop: 2 }}>
-                    {triageResult.missing_information.map((m, i) => (
-                      <li key={i}>{m}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+              );
+            })()
           ) : null}
         </div>
 
