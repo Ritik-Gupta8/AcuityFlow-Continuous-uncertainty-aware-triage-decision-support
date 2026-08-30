@@ -93,3 +93,49 @@ def test_uncertainty_escalation_bias():
     result = evaluate_patient_triage(patient, obs)
     assert result.action == "ESCALATE"
     assert result.confidence_score < 70.0
+
+def test_model_certainty_boundary_margin_mathematical_derivation():
+    """Regression test: verifies that model certainty is mathematically derived from distance to decision boundary (0.50) and scaled by completeness."""
+    from app.ml.uncertainty import compute_uncertainty_breakdown
+
+    patient = Patient(
+        patient_id="TEST-MATH-01",
+        name="Test Math",
+        age_years=58,
+        population_profile="adult",
+        chief_complaint="Chest discomfort",
+        first_time_patient=False,
+        history_available=True
+    )
+    obs = Observation(
+        observation_id="OBS-M1",
+        patient_id="TEST-MATH-01",
+        heart_rate=118.0,
+        respiratory_rate=26.0,
+        systolic_bp=98.0,
+        diastolic_bp=62.0,
+        spo2=91.0,
+        temperature_c=37.3
+    )
+
+    # 1. Borderline probability 0.496 (Risk score 49.6/100) -> distance |0.496 - 0.500| = 0.004 -> 0.004 * 200 = 0.8%
+    unc_borderline = compute_uncertainty_breakdown(patient, obs, calibrated_prob=0.496085, completeness=100.0, has_conflict=False)
+    assert unc_borderline.model_certainty == 0.8
+    assert any("decision boundary margin is 0.8%" in f or "50% threshold" in f for f in unc_borderline.contributing_factors)
+
+    # 2. Maximum entropy / exact boundary 0.500 -> distance 0.0 -> margin = 0.0%
+    unc_boundary = compute_uncertainty_breakdown(patient, obs, calibrated_prob=0.500, completeness=100.0, has_conflict=False)
+    assert unc_boundary.model_certainty == 0.0
+
+    # 3. Decisive high risk 0.950 -> distance 0.450 -> margin = 0.450 * 200 = 90.0%
+    unc_high = compute_uncertainty_breakdown(patient, obs, calibrated_prob=0.950, completeness=100.0, has_conflict=False)
+    assert unc_high.model_certainty == 90.0
+
+    # 4. Decisive low risk 0.050 -> distance 0.450 -> margin = 0.450 * 200 = 90.0%
+    unc_low = compute_uncertainty_breakdown(patient, obs, calibrated_prob=0.050, completeness=100.0, has_conflict=False)
+    assert unc_low.model_certainty == 90.0
+
+    # 5. Incomplete data penalty: 0.950 on 50% completeness -> 90.0 * 0.50 = 45.0%
+    unc_incomplete = compute_uncertainty_breakdown(patient, obs, calibrated_prob=0.950, completeness=50.0, has_conflict=False)
+    assert unc_incomplete.model_certainty == 45.0
+
