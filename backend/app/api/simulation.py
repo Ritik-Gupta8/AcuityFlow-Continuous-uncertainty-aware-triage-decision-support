@@ -9,8 +9,10 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db, Base, engine
-from app.models.entities import Patient, Observation, AuditEvent, TriageResult
-from app.schemas.schemas import AdvanceTimeRequest, SurgeToggleRequest, InjectVitalsRequest
+from app.core.security import require_role
+from app.models.entities import Patient, Observation, AuditEvent, TriageResult, User
+from app.ml.risk_model import risk_engine
+from app.schemas.schemas import AdvanceTimeRequest, SurgeToggleRequest, InjectVitalsRequest, SimulationStatus
 from app.reassessment.monitor import reassessment_monitor
 from app.policy.action_policy import evaluate_patient_triage
 from app.data.seed_cases import seed_database, populate_surge_patients, remove_surge_patients
@@ -23,16 +25,23 @@ SIMULATION_STATE = {
     "current_time_offset_minutes": 0,
 }
 
-@router.get("/status")
+@router.get("/status", response_model=SimulationStatus)
 def get_simulation_status():
     return {
         "surge_active": SIMULATION_STATE["surge_active"],
         "time_offset_minutes": SIMULATION_STATE["current_time_offset_minutes"],
+        "model_status": risk_engine.model_status,
+        "model_available": risk_engine.model_available,
+        "model_source": risk_engine.model_source,
         "disclaimer": "Simulated Environment • Synthetic Data"
     }
 
 @router.post("/advance-time")
-def advance_simulated_time(req: AdvanceTimeRequest, db: Session = Depends(get_db)):
+def advance_simulated_time(
+    req: AdvanceTimeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
+):
     """Advances waiting time for all waiting patients and recomputes reassessments."""
     SIMULATION_STATE["current_time_offset_minutes"] += req.minutes
     patients = db.query(Patient).filter(Patient.current_status == "WAITING").all()
@@ -81,7 +90,11 @@ def advance_simulated_time(req: AdvanceTimeRequest, db: Session = Depends(get_db
     }
 
 @router.post("/surge")
-def toggle_surge_mode(req: SurgeToggleRequest, db: Session = Depends(get_db)):
+def toggle_surge_mode(
+    req: SurgeToggleRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
+):
     """Toggles 3x surge mode status and dynamically scales arrival workload."""
     SIMULATION_STATE["surge_active"] = req.surge_active
     
@@ -93,8 +106,8 @@ def toggle_surge_mode(req: SurgeToggleRequest, db: Session = Depends(get_db)):
     audit = AuditEvent(
         audit_id=f"AUD-{uuid.uuid4().hex[:8]}",
         timestamp=datetime.now(timezone.utc),
-        actor_id="supervisor-201",
-        actor_role="supervisor",
+        actor_id=current_user.username,
+        actor_role=current_user.role,
         event_type="surge_toggle",
         patient_id=None,
         recommendation=None,
@@ -115,7 +128,11 @@ def toggle_surge_mode(req: SurgeToggleRequest, db: Session = Depends(get_db)):
     }
 
 @router.post("/inject-deterioration")
-def inject_deterioration_vitals(req: InjectVitalsRequest, db: Session = Depends(get_db)):
+def inject_deterioration_vitals(
+    req: InjectVitalsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
+):
     """Injects deteriorating vital signs into a patient (e.g. PT-021) to demo continuous re-triage."""
     patient = db.query(Patient).filter(Patient.patient_id == req.patient_id).first()
     if not patient:
@@ -182,15 +199,20 @@ def inject_deterioration_vitals(req: InjectVitalsRequest, db: Session = Depends(
         key_signals=eval_result.key_signals,
         missing_information=eval_result.missing_information,
         explanation=eval_result.explanation,
-        population_profile=eval_result.population_profile
+        population_profile=eval_result.population_profile,
+        policy_version="v2.0.0-prototype",
+        model_version=eval_result.model_version,
+        model_status=eval_result.model_status,
+        model_available=eval_result.model_available,
+        model_source=eval_result.model_source
     )
     db.add(triage_record)
 
     audit = AuditEvent(
         audit_id=f"AUD-{uuid.uuid4().hex[:8]}",
         timestamp=datetime.now(timezone.utc),
-        actor_id="simulation-engine",
-        actor_role="system",
+        actor_id=current_user.username,
+        actor_role=current_user.role,
         event_type="deterioration_injected",
         patient_id=patient.patient_id,
         recommendation=eval_result.priority,
@@ -213,11 +235,14 @@ def inject_deterioration_vitals(req: InjectVitalsRequest, db: Session = Depends(
     }
 
 @router.post("/reset")
-def reset_database(db: Session = Depends(get_db)):
-    """Resets database and re-seeds 24 test cases."""
+def reset_database(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
+):
+    """Resets database and re-seeds 24 test cases and demo users."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     seed_database(db)
     SIMULATION_STATE["surge_active"] = False
     SIMULATION_STATE["current_time_offset_minutes"] = 0
-    return {"status": "success", "message": "Database reset and reseeded with 24 test cases."}
+    return {"status": "success", "message": "Database reset and seeded with 24 test cases and default accounts."}

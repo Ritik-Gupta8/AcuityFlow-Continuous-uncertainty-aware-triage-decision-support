@@ -1,7 +1,7 @@
 """
 AcuityFlow AI Core Configuration.
 NOTE: All clinical thresholds, scoring weights, and population boundaries defined here
-are illustrative prototype rules designed for hackathon/educational demonstration.
+are illustrative prototype rules designed for prototype/educational demonstration.
 TODO: CLINICAL VALIDATION REQUIRED - NOT FOR CLINICAL USE.
 """
 
@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     PROTOTYPE_DISCLAIMER: str = "Concept prototype • Synthetic data • Not for clinical diagnosis or treatment • Clinical validation required."
     
     DATABASE_URL: str = "sqlite:///./acuityflow.db"
+
+    # Authentication & JWT Configuration (Prototype defaults)
+    JWT_SECRET_KEY: str = "acuityflow-prototype-jwt-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 120
     
     # Population boundaries (Illustrative prototype assumptions)
     # TODO: CLINICAL VALIDATION REQUIRED

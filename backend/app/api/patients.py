@@ -9,7 +9,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.models.entities import Patient, Observation, TriageResult, AuditEvent
+from app.core.security import require_role
+from app.models.entities import Patient, Observation, TriageResult, AuditEvent, User
 from app.schemas.schemas import PatientOut, ObservationCreate, ObservationOut, TriageResultOut, PatientSymptomsUpdate
 from app.policy.action_policy import evaluate_patient_triage
 from app.reassessment.monitor import reassessment_monitor
@@ -19,7 +20,8 @@ router = APIRouter(prefix="/patients", tags=["Patients"])
 @router.get("", response_model=List[PatientOut])
 def list_patients(
     surge: bool = Query(False, description="Sort attention-first for 3x surge mode"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
 ):
     patients = db.query(Patient).all()
     
@@ -39,7 +41,11 @@ def list_patients(
     return patients
 
 @router.get("/{patient_id}", response_model=PatientOut)
-def get_patient(patient_id: str, db: Session = Depends(get_db)):
+def get_patient(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
+):
     patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -49,7 +55,8 @@ def get_patient(patient_id: str, db: Session = Depends(get_db)):
 def add_patient_observation(
     patient_id: str,
     obs_in: ObservationCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
 ):
     patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
     if not patient:
@@ -106,16 +113,21 @@ def add_patient_observation(
         key_signals=eval_result.key_signals,
         missing_information=eval_result.missing_information,
         explanation=eval_result.explanation,
-        population_profile=eval_result.population_profile
+        population_profile=eval_result.population_profile,
+        policy_version="v2.0.0-prototype",
+        model_version=eval_result.model_version,
+        model_status=eval_result.model_status,
+        model_available=eval_result.model_available,
+        model_source=eval_result.model_source
     )
     db.add(triage_record)
 
-    # Log Audit Event
+    # Log Audit Event with authenticated user identity
     audit = AuditEvent(
         audit_id=f"AUD-{uuid.uuid4().hex[:8]}",
         timestamp=datetime.now(timezone.utc),
-        actor_id="nurse-101",
-        actor_role="nurse",
+        actor_id=current_user.username,
+        actor_role=current_user.role,
         event_type="observation_update",
         patient_id=patient_id,
         recommendation=eval_result.priority,
@@ -132,7 +144,11 @@ def add_patient_observation(
     return new_obs
 
 @router.get("/{patient_id}/triage-latest", response_model=TriageResultOut)
-def get_latest_triage_result(patient_id: str, db: Session = Depends(get_db)):
+def get_latest_triage_result(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
+):
     result = db.query(TriageResult).filter(TriageResult.patient_id == patient_id).order_by(TriageResult.timestamp.desc()).first()
     if not result:
         raise HTTPException(status_code=404, detail="No triage result found for patient")
@@ -142,7 +158,8 @@ def get_latest_triage_result(patient_id: str, db: Session = Depends(get_db)):
 def update_patient_symptoms(
     patient_id: str,
     payload: PatientSymptomsUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["nurse", "supervisor", "admin"]))
 ):
     """
     Updates patient clinical cues with confirmed extracted symptoms.
@@ -194,15 +211,20 @@ def update_patient_symptoms(
         key_signals=eval_result.key_signals,
         missing_information=eval_result.missing_information,
         explanation=eval_result.explanation,
-        population_profile=eval_result.population_profile
+        population_profile=eval_result.population_profile,
+        policy_version="v2.0.0-prototype",
+        model_version=eval_result.model_version,
+        model_status=eval_result.model_status,
+        model_available=eval_result.model_available,
+        model_source=eval_result.model_source
     )
     db.add(triage_record)
 
     audit = AuditEvent(
         audit_id=f"AUD-{uuid.uuid4().hex[:8]}",
         timestamp=datetime.now(timezone.utc),
-        actor_id="nurse-101",
-        actor_role="nurse",
+        actor_id=current_user.username,
+        actor_role=current_user.role,
         event_type="structured_symptoms_confirmed",
         patient_id=patient_id,
         recommendation=eval_result.priority,
