@@ -37,7 +37,7 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
     setFreeText(patient.symptom_text || '');
     setExtractedSymptoms([]);
     setExtractionError(null);
-  }, [patient.patient_id]);
+  }, [patient.patient_id, patient.observations?.length, patient.waiting_minutes, patient.current_risk_score]);
 
   const handleExtractSymptoms = async () => {
     if (!freeText.trim()) return;
@@ -101,12 +101,13 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
 
   const handleAccept = async () => {
     try {
+      const aiPriorityToAccept = patient.ai_priority || triageResult?.priority || patient.current_priority;
       await api.recordDecision(patient.patient_id, {
         clinician_id: 'nurse-101',
         actor_role: 'nurse',
         clinician_action: 'accept',
-        final_priority: patient.current_priority,
-        clinician_note: 'Recommendation accepted by triage nurse.',
+        final_priority: aiPriorityToAccept,
+        clinician_note: 'AI triage recommendation accepted by triage nurse.',
       });
       onDecisionSubmitted();
       onClose();
@@ -117,11 +118,13 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
 
   const handleEscalate = async () => {
     try {
+      const currentVal = patient.effective_priority || patient.current_priority;
+      const targetPriority = currentVal === 'HIGH' || currentVal === 'IMMEDIATE' ? 'IMMEDIATE' : 'HIGH';
       await api.recordDecision(patient.patient_id, {
         clinician_id: 'nurse-101',
         actor_role: 'nurse',
         clinician_action: 'escalate',
-        final_priority: 'HIGH',
+        final_priority: targetPriority,
         override_reason: 'Clinician clinical escalation based on direct patient evaluation',
         clinician_note: 'Escalated for immediate senior physician review.',
       });
@@ -134,6 +137,11 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
 
   const latestObs = patient.observations[0];
   const prevObs = patient.observations[1];
+
+  const hasDeterioration = Boolean(
+    patient.reassessment_reasons?.some(r => r.toLowerCase().includes('deterioration')) ||
+    (prevObs && latestObs && prevObs.spo2 !== latestObs.spo2)
+  );
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -155,15 +163,50 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
         <div className="modal-body">
           {/* Reassessment Banner */}
           {patient.needs_reassessment && (
-            <div className="danger-box">
-              <Zap size={20} style={{ color: '#ef4444', flexShrink: 0 }} />
-              <div>
-                <strong>AcuityWatch Active Reassessment Recommendation</strong>
-                <ul style={{ paddingLeft: 18, marginTop: 4 }}>
-                  {patient.reassessment_reasons.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
+            <div
+              className="danger-box"
+              style={{
+                borderLeft: hasDeterioration ? '4px solid #ef4444' : '4px solid #f59e0b',
+                background: hasDeterioration ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                padding: '14px 16px',
+                borderRadius: 8
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                {hasDeterioration ? (
+                  <Zap size={22} style={{ color: '#ef4444', flexShrink: 0, marginTop: 2 }} />
+                ) : (
+                  <Activity size={22} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                    <strong style={{ color: hasDeterioration ? '#fca5a5' : '#fde68a', fontSize: '0.95rem', letterSpacing: '0.02em' }}>
+                      {hasDeterioration ? 'REASSESS NOW — CLINICIAN REVIEW REQUIRED' : 'REASSESSMENT OVERDUE — CLINICIAN REVIEW RECOMMENDED'}
+                    </strong>
+                    <span
+                      style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        background: hasDeterioration ? '#ef4444' : '#f59e0b',
+                        color: '#fff',
+                        padding: '3px 10px',
+                        borderRadius: 4
+                      }}
+                    >
+                      {hasDeterioration ? 'Final Action: ESCALATE' : '⏱️ Reassessment Overdue'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.76rem', color: '#cbd5e1', marginTop: 4 }}>
+                    {hasDeterioration
+                      ? 'AcuityWatch continuous monitor detected acute physiological deterioration & risk trajectory shift:'
+                      : 'AcuityWatch continuous queue monitor: Patient has exceeded scheduled reassessment window for their priority tier:'}
+                  </div>
+                  <ul style={{ paddingLeft: 18, marginTop: 6, fontSize: '0.78rem', color: hasDeterioration ? '#fecaca' : '#fef3c7', lineHeight: 1.45 }}>
+                    {patient.reassessment_reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             </div>
           )}
@@ -194,7 +237,9 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
               </div>
               <div>
                 <span style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Waiting Time</span>
-                <div style={{ fontWeight: 600 }}>{patient.waiting_minutes} minutes</div>
+                <div style={{ fontWeight: 600, color: '#f1f5f9' }}>
+                  {patient.waiting_minutes} minutes
+                </div>
               </div>
               <div>
                 <span style={{ fontSize: '0.72rem', color: '#9ca3af' }}>Pain Score</span>
@@ -361,51 +406,114 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
             )}
           </div>
 
-          {/* Vitals Overview */}
+          {/* Physiological Observations & Deterioration Transition Timeline */}
           <div>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Activity size={16} style={{ color: '#3b82f6' }} />
-              Latest Physiological Observations
-            </h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Activity size={16} style={{ color: '#3b82f6' }} />
+                {hasDeterioration ? 'Physiological Observation & Deterioration Timeline' : 'Physiological Observations'}
+              </h3>
+              {hasDeterioration && (
+                <span style={{ fontSize: '0.7rem', color: '#fca5a5', fontWeight: 700, background: 'rgba(239, 68, 68, 0.15)', padding: '2px 8px', borderRadius: 4 }}>
+                  ⚡ Deterioration Detected
+                </span>
+              )}
+            </div>
+
+            {/* Trajectory Transition Delta Card (only rendered when genuine baseline-to-new-observation transition exists) */}
+            {hasDeterioration && prevObs && latestObs && (
+              <div style={{ background: '#111827', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#f87171', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  AcuityWatch Physiological Transition (Baseline → Latest)
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6 }}>
+                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>SpO2 Saturation</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f87171' }}>
+                      {prevObs.spo2}% → {latestObs.spo2}%
+                    </div>
+                    <div style={{ fontSize: '0.66rem', color: '#fca5a5' }}>
+                      {latestObs.spo2 && prevObs.spo2 ? `${latestObs.spo2 - prevObs.spo2 > 0 ? '+' : ''}${(latestObs.spo2 - prevObs.spo2).toFixed(1)}% drop` : ''}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6 }}>
+                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Heart Rate</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f87171' }}>
+                      {prevObs.heart_rate} → {latestObs.heart_rate} bpm
+                    </div>
+                    <div style={{ fontSize: '0.66rem', color: '#fca5a5' }}>
+                      {latestObs.heart_rate && prevObs.heart_rate ? `+${latestObs.heart_rate - prevObs.heart_rate} bpm spike` : ''}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6 }}>
+                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Blood Pressure</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f87171' }}>
+                      {prevObs.systolic_bp}/{prevObs.diastolic_bp} → {latestObs.systolic_bp}/{latestObs.diastolic_bp}
+                    </div>
+                    <div style={{ fontSize: '0.66rem', color: '#fca5a5' }}>
+                      {latestObs.systolic_bp && prevObs.systolic_bp ? `${latestObs.systolic_bp - prevObs.systolic_bp} mmHg SBP drop` : ''}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: 8, borderRadius: 6 }}>
+                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Respiration</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#f87171' }}>
+                      {prevObs.respiratory_rate}/m → {latestObs.respiratory_rate}/m
+                    </div>
+                    <div style={{ fontSize: '0.66rem', color: '#fca5a5' }}>
+                      {latestObs.respiratory_rate && prevObs.respiratory_rate ? `+${latestObs.respiratory_rate - prevObs.respiratory_rate}/min increase` : ''}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {latestObs ? (
               <div className="vitals-grid">
                 <div className="vital-stat-box">
-                  <div className="vital-name">Heart Rate</div>
+                  <div className="vital-name">Heart Rate (Current)</div>
                   <div className="vital-val" style={{ color: (latestObs.heart_rate ?? 0) > 100 ? '#f87171' : '#f9fafb' }}>
                     {latestObs.heart_rate ?? '--'} <span style={{ fontSize: '0.75rem', fontWeight: 400 }}>bpm</span>
                   </div>
                   {prevObs?.heart_rate && (
-                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Prev: {prevObs.heart_rate}</div>
+                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Baseline: {prevObs.heart_rate} bpm</div>
                   )}
                 </div>
 
                 <div className="vital-stat-box">
-                  <div className="vital-name">Respiration</div>
+                  <div className="vital-name">Respiration (Current)</div>
                   <div className="vital-val" style={{ color: (latestObs.respiratory_rate ?? 0) > 22 ? '#f87171' : '#f9fafb' }}>
                     {latestObs.respiratory_rate ?? '--'} <span style={{ fontSize: '0.75rem', fontWeight: 400 }}>/min</span>
                   </div>
+                  {prevObs?.respiratory_rate && (
+                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Baseline: {prevObs.respiratory_rate}/min</div>
+                  )}
                 </div>
 
                 <div className="vital-stat-box">
-                  <div className="vital-name">Blood Pressure</div>
-                  <div className="vital-val">
+                  <div className="vital-name">Blood Pressure (Current)</div>
+                  <div className="vital-val" style={{ color: (latestObs.systolic_bp ?? 120) < 100 ? '#f87171' : '#f9fafb' }}>
                     {latestObs.systolic_bp ?? '--'}/{latestObs.diastolic_bp ?? '--'}
                   </div>
+                  {prevObs?.systolic_bp && (
+                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Baseline: {prevObs.systolic_bp}/{prevObs.diastolic_bp}</div>
+                  )}
                 </div>
 
                 <div className="vital-stat-box">
-                  <div className="vital-name">SpO2 Oxygen</div>
+                  <div className="vital-name">SpO2 Oxygen (Current)</div>
                   <div className="vital-val" style={{ color: (latestObs.spo2 ?? 100) < 94 ? '#f87171' : '#34d399' }}>
                     {latestObs.spo2 ? `${latestObs.spo2}%` : '--'}
                   </div>
                   {prevObs?.spo2 && (
-                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Prev: {prevObs.spo2}%</div>
+                    <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>Baseline: {prevObs.spo2}%</div>
                   )}
                 </div>
 
                 <div className="vital-stat-box">
-                  <div className="vital-name">Temperature</div>
+                  <div className="vital-name">Temperature (Current)</div>
                   <div className="vital-val">
                     {latestObs.temperature_c ? `${latestObs.temperature_c}°C` : '--'}
                   </div>
@@ -424,21 +532,27 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
               <div className="triage-status-bar">
                 <div>
                   <span style={{ fontSize: '0.72rem', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    AI Decision Support Recommendation
+                    Decision Support Output
                   </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                    <span className={`priority-tag priority-${triageResult.priority}`} style={{ fontSize: '0.95rem', padding: '6px 14px' }}>
-                      {triageResult.priority}
-                    </span>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#93c5fd' }}>
-                      Action: {triageResult.action}
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+                    <div>
+                      <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>AI Recommendation</span>
+                      <span className={`priority-tag priority-${triageResult.priority}`} style={{ fontSize: '0.92rem', padding: '4px 12px' }}>
+                        {triageResult.priority}
+                      </span>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Workflow Action</span>
+                      <span style={{ fontSize: '0.86rem', fontWeight: 800, color: triageResult.action === 'ESCALATE' ? '#f87171' : '#60a5fa', background: 'rgba(0,0,0,0.3)', padding: '4px 10px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.1)' }}>
+                        {triageResult.action}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: 16, textAlign: 'right' }}>
                   <div>
-                    <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>Risk Score</span>
+                    <span style={{ fontSize: '0.72rem', color: '#93c5fd' }}>Risk Score (ML)</span>
                     <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f1f5f9' }}>
                       {triageResult.risk_score}<span style={{ fontSize: '0.75rem', fontWeight: 500, color: '#94a3b8' }}>/100</span>
                     </div>
@@ -452,10 +566,45 @@ export const PatientDetailModal: React.FC<PatientDetailModalProps> = ({
                 </div>
               </div>
 
+              {/* Active Human Override Status */}
+              {patient.clinician_decision && patient.clinician_action === 'override' && (
+                <div style={{ background: 'rgba(37, 99, 235, 0.15)', border: '1px solid #3b82f6', padding: '10px 14px', borderRadius: 8, marginTop: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.78rem', color: '#93c5fd', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      👨‍⚕️ Human Override Applied
+                    </span>
+                    <span style={{ fontSize: '0.68rem', background: '#2563eb', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700 }}>
+                      Clinician Authority Active
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div>
+                      <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Clinician Decision:</span>
+                      <strong className={`priority-tag priority-${patient.clinician_decision}`} style={{ fontSize: '0.82rem' }}>
+                        {patient.clinician_decision}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '0.68rem', color: '#9ca3af', display: 'block' }}>Effective Operational Priority:</span>
+                      <strong className={`priority-tag priority-${patient.effective_priority || patient.clinician_decision}`} style={{ fontSize: '0.82rem' }}>
+                        {patient.effective_priority || patient.clinician_decision}
+                      </strong>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: 6 }}>
+                    <strong>Override Reason:</strong> {patient.override_reason}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontStyle: 'italic', marginTop: -4 }}>
+                * Workflow confidence measures intake data completeness and statistical decision boundary margin; it is a decision-support indicator, not a diagnostic probability.
+              </div>
+
               {/* Decision Source & Population Profile Badge */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.74rem', background: 'rgba(59, 130, 246, 0.1)', padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                 <span style={{ color: '#93c5fd' }}>
-                  <strong>Source: </strong> Safety Gate + Calibrated Risk Model
+                  <strong>Decision Authority: </strong> Safety Gate + Calibrated Risk Model
                 </span>
                 <span style={{ color: '#cbd5e1', fontWeight: 600 }}>
                   Profile: <span style={{ textTransform: 'uppercase', color: '#60a5fa' }}>{triageResult.population_profile}</span>

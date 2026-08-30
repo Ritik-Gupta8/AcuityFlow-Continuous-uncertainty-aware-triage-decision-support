@@ -30,6 +30,22 @@ export interface Patient {
   arrival_time: string;
   waiting_minutes: number;
   current_status: string;
+
+  // 1. AI Recommendation State (Immutable from Triage Model)
+  ai_priority?: 'IMMEDIATE' | 'HIGH' | 'MODERATE' | 'LOW' | 'REVIEW';
+  ai_workflow_action?: 'RECOMMEND' | 'REASSESS' | 'ESCALATE' | 'ABSTAIN';
+  ai_confidence?: number;
+  ai_risk_score?: number;
+
+  // 2. Clinician Decision & Override State (Separate from AI)
+  clinician_decision?: 'IMMEDIATE' | 'HIGH' | 'MODERATE' | 'LOW' | 'REVIEW' | null;
+  clinician_action?: 'accept' | 'override' | 'escalate' | null;
+  override_reason?: string | null;
+
+  // 3. Operational Effective Priority & Workflow State
+  effective_priority?: 'IMMEDIATE' | 'HIGH' | 'MODERATE' | 'LOW' | 'REVIEW';
+  reassessment_state?: string;
+
   current_priority: 'IMMEDIATE' | 'HIGH' | 'MODERATE' | 'LOW' | 'REVIEW';
   current_action: 'RECOMMEND' | 'REASSESS' | 'ESCALATE' | 'ABSTAIN';
   current_confidence: number;
