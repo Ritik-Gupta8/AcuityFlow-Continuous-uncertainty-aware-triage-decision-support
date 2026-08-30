@@ -71,6 +71,9 @@ export interface TriageResult {
   population_profile: string;
   policy_version: string;
   model_version: string;
+  model_status?: 'CALIBRATED_ML' | 'FALLBACK';
+  model_available?: boolean;
+  model_source?: string;
   disclaimer: string;
 }
 
@@ -102,6 +105,9 @@ export interface AuditEvent {
 export interface SimulationStatus {
   surge_active: boolean;
   time_offset_minutes: number;
+  model_status?: 'CALIBRATED_ML' | 'FALLBACK';
+  model_available?: boolean;
+  model_source?: string;
   disclaimer: string;
 }
 
@@ -110,5 +116,36 @@ export interface SymptomExtractionResult {
   duration_minutes?: number | null;
   extracted_by: string;
   is_ambiguous: boolean;
+}
+
+export interface User {
+  user_id: string;
+  username: string;
+  role: 'nurse' | 'supervisor' | 'admin';
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user_id: string;
+  username: string;
+  role: 'nurse' | 'supervisor' | 'admin';
+}
+
+export interface AdminConfig {
+  project_name: string;
+  version: string;
+  pediatric_max_age: number;
+  geriatric_min_age: number;
+  min_confidence_threshold: number;
+  min_completeness_threshold: number;
+  disclaimer: string;
 }
 
