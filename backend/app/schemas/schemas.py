@@ -54,6 +54,20 @@ class PatientOut(PatientBase):
     arrival_time: datetime
     waiting_minutes: int
     current_status: str
+    
+    # Explicit Domain Model Fields
+    ai_priority: str = "MODERATE"
+    ai_workflow_action: str = "RECOMMEND"
+    ai_confidence: float = 75.0
+    ai_risk_score: float = 30.0
+    
+    clinician_decision: Optional[str] = None
+    clinician_action: Optional[str] = None
+    override_reason: Optional[str] = None
+    
+    effective_priority: str = "MODERATE"
+    reassessment_state: str = "NORMAL"
+
     current_priority: str
     current_action: str
     current_confidence: float
@@ -161,6 +175,7 @@ class InjectVitalsRequest(BaseModel):
     heart_rate: Optional[float] = None
     respiratory_rate: Optional[float] = None
     systolic_bp: Optional[float] = None
+    diastolic_bp: Optional[float] = None
     spo2: Optional[float] = None
     temperature_c: Optional[float] = None
     notes: Optional[str] = "Simulated deterioration injection"
