@@ -18,6 +18,10 @@ from app.policy.action_policy import evaluate_patient_triage
 
 client = TestClient(app)
 
+@pytest.fixture(autouse=True)
+def setup_auth(auth_client):
+    client.headers = auth_client.headers
+
 # --- 1. Unit Tests for Extractor Engine ---
 
 def test_symptom_extractor_dizziness_and_weakness():

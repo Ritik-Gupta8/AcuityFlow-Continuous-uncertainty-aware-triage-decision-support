@@ -139,3 +139,82 @@ def test_model_certainty_boundary_margin_mathematical_derivation():
     unc_incomplete = compute_uncertainty_breakdown(patient, obs, calibrated_prob=0.950, completeness=50.0, has_conflict=False)
     assert unc_incomplete.model_certainty == 45.0
 
+# ==============================================================================
+# MODEL ARTIFACT FAILURE & DETERMINISTIC FALLBACK TEST SUITE
+# ==============================================================================
+
+def test_fallback_scoring_when_artifacts_unavailable():
+    """TEST A & C: Verifies that when model artifacts are unavailable, system enters FALLBACK mode and never claims calibrated ML."""
+    from app.ml.risk_model import MLRiskScoringEngine
+    from app.policy.action_policy import evaluate_patient_triage
+
+    # Instantiate engine with non-existent artifact dir
+    fallback_engine = MLRiskScoringEngine(artifact_dir="non_existent_dir_123")
+    assert fallback_engine.model_available is False
+    assert fallback_engine.model_status == "FALLBACK"
+    assert fallback_engine.model_source == "deterministic-fallback"
+
+    patient = Patient(
+        patient_id="PT-FALLBACK-01",
+        name="Fallback Test",
+        age_years=45,
+        population_profile="adult",
+        chief_complaint="Shortness of breath",
+        first_time_patient=False,
+        history_available=True
+    )
+    obs = Observation(
+        observation_id="OBS-FB1",
+        patient_id="PT-FALLBACK-01",
+        heart_rate=112.0,
+        respiratory_rate=24.0,
+        systolic_bp=120.0,
+        diastolic_bp=80.0,
+        spo2=92.0,
+        temperature_c=37.0
+    )
+
+    pred = fallback_engine.predict_risk(patient, obs)
+    assert pred["model_status"] == "FALLBACK"
+    assert pred["model_available"] is False
+    assert pred["model_source"] == "deterministic-fallback"
+    assert "risk_score" in pred
+    assert pred["risk_score"] > 0
+
+def test_triage_decision_preserves_model_status_and_truthful_wording():
+    """TEST C: Verifies triage decision explanation uses truthful wording under fallback mode."""
+    from app.ml.risk_model import risk_engine
+    from app.policy.action_policy import evaluate_patient_triage
+
+    patient = Patient(
+        patient_id="PT-TEST-STATUS",
+        name="Status Test",
+        age_years=30,
+        population_profile="adult",
+        chief_complaint="Minor laceration",
+        first_time_patient=False,
+        history_available=True
+    )
+    obs = Observation(
+        observation_id="OBS-ST1",
+        patient_id="PT-TEST-STATUS",
+        heart_rate=72.0,
+        respiratory_rate=16.0,
+        systolic_bp=120.0,
+        diastolic_bp=80.0,
+        spo2=99.0,
+        temperature_c=36.8
+    )
+
+    res = evaluate_patient_triage(patient, obs)
+    assert res.model_status in ["CALIBRATED_ML", "FALLBACK"]
+    assert res.model_available in [True, False]
+    assert res.model_source in ["calibrated_model", "deterministic-fallback"]
+
+    if not res.model_available:
+        assert "calibrated ML model" not in res.explanation
+        assert "fallback" in res.explanation.lower()
+    else:
+        assert "calibrated ML model" in res.explanation
+
+
