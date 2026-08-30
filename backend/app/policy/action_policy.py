@@ -133,7 +133,7 @@ def evaluate_patient_triage(patient: Patient, latest_obs: Optional[Observation])
         if base_priority in ["LOW", "MODERATE"]:
             final_priority = "REVIEW"
         explanation_parts.append(
-            f"Uncertainty flag: Workflow confidence is {confidence}% (model certainty {uncertainty.model_certainty}%, completeness {uncertainty.data_reliability}%). Escalated for clinician review to prevent under-triage."
+            f"Uncertainty flag: Workflow confidence is {confidence}% (statistical decision margin {uncertainty.model_certainty}%, data completeness {uncertainty.data_reliability}%). Escalated for clinician review to prevent under-triage."
         )
 
     # Rule 4: Incomplete Data on Concerning / Moderate+ Presentation -> ESCALATE (Never guess LOW)
@@ -150,7 +150,18 @@ def evaluate_patient_triage(patient: Patient, latest_obs: Optional[Observation])
             f"Incomplete intake data ({completeness}%) with active clinical cues. Missing vital signs prevented definitive scoring; escalated for immediate clinician review."
         )
 
-    # Rule 5: Standard safe recommendation
+    # Rule 5: Clinical presentation with cardiac/chest discomfort flags -> Minimum baseline MODERATE
+    elif base_priority == "LOW" and (
+        "chest" in (patient.chief_complaint or "").lower()
+        or "cardiac" in (patient.chief_complaint or "").lower()
+    ):
+        final_priority = "MODERATE"
+        action = "RECOMMEND"
+        explanation_parts.append(
+            f"Risk estimate {risk_score}/100 from calibrated ML model. Clinical complaint indicates moderate cardiac/chest symptom monitoring required on 15m reassessment schedule."
+        )
+
+    # Rule 6: Standard safe recommendation
     else:
         action = "RECOMMEND"
         explanation_parts.append(
