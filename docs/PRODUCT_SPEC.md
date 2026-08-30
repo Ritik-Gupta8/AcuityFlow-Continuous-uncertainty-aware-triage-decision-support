@@ -118,15 +118,33 @@ Show:
 ### 5.7 Audit Trail
 
 Show:
-- timestamp,
+- decision timeline,
 - actor,
-- recommendation,
-- confidence,
-- decision,
-- override reason,
-- policy/model version.
+- recommendation vs final,
+- override justifications,
+- security/safety events.
 
-### 5.8 Surge Mode
+### 5.8 Bounded Free-Text Symptom Extraction (Human Confirmation Flow)
+
+```text
+Free Text
+    ↓
+Symptom Extractor (POST /api/nlp/extract-symptoms)
+    ↓
+Validated Structured Extraction (Symptoms, Duration, Ambiguity)
+    ↓
+Clinician Review & Confirmation / Edit
+    ↓
+Existing Triage Pipeline (Safety Gate + ML Risk Model + Uncertainty + Action Policy)
+```
+
+**Key Safety Guarantees:**
+- Extractor output is presented strictly as a suggestion.
+- Extractor never assigns autonomous triage priority or urgency bands.
+- Validated structured symptoms feed into the existing deterministic safety gate and ML risk model.
+- Extractor failure gracefully falls back to manual entry without disrupting the triage workflow.
+
+### 5.9 Surge Mode
 
 Show:
 - normal volume,

@@ -2,7 +2,7 @@
 
 ## 0. Safety notice
 
-This document defines an **illustrative hackathon policy**, not a clinical protocol.
+This document defines an **illustrative prototype policy**, not a clinical protocol.
 
 No threshold, weight or category below is presented as a medical standard.
 
@@ -140,7 +140,7 @@ ELSE:
 
 ## 7. Why escalation is preferred
 
-The Accenture case explicitly requires the prototype to bias toward escalation under uncertainty because under-triage has asymmetric cost.
+The system design explicitly requires the prototype to bias toward escalation under uncertainty because under-triage has asymmetric cost.
 
 Therefore:
 

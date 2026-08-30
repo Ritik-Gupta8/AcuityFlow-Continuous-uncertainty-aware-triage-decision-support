@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-Round 2 explicitly requires the system to behave under a simulated 3× surge and to monitor waiting patients for deterioration or overdue reassessment.
+The system is designed to operate under a simulated 3× surge and to monitor waiting patients for deterioration or overdue reassessment.
 
 ## 2. Simulation
 

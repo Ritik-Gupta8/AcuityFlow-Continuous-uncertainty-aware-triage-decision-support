@@ -20,27 +20,46 @@ For the prototype:
 - do not collect real identifiers,
 - do not persist real clinical records.
 
-## 3. Access control
+## 3. Role-Based Access Control (RBAC) Implementation
 
-Roles:
+The prototype implements server-side backend-enforced RBAC using HS256 JWT access tokens and PBKDF2-HMAC-SHA256 password hashing.
 
-### Nurse
-- view queue,
-- view assigned patient,
-- submit triage decision,
-- override recommendation.
+### Authorization Workflow
+```text
+Authentication
+  ↓ (POST /api/auth/login with valid password hash)
+User Identity & Claims
+  ↓ (sub: user_id, username, role)
+Backend Role Resolution & Authorization
+  ↓ (FastAPI get_current_user & require_role dependencies)
+Allowed Action
+  ↓ (HTTP 200/201 on permitted action, HTTP 403 on role denial, HTTP 401 on unauthenticated)
+Authoritative Audit Event
+  ↓ (actor_id & actor_role populated strictly from verified token, client body spoofing discarded)
+```
 
-### Supervisor
-- all nurse capabilities,
-- audit/override review,
-- queue monitoring.
+### Supported Roles & Matrix
 
-### Admin
-- hospital profile configuration,
-- policy version management,
-- user/role management.
+| Capability / Endpoint | Nurse (`nurse101`) | Supervisor (`supervisor101`) | Admin (`admin101`) |
+|---|:---:|:---:|:---:|
+| **Patient Queue & Detail** (`GET /api/patients`) | ✅ Allowed | ✅ Allowed | ✅ Allowed |
+| **Triage & Observations** (`POST /api/patients/{id}/obs`) | ✅ Allowed | ✅ Allowed | ✅ Allowed |
+| **Clinician Overrides** (`POST /api/patients/{id}/decision`) | ✅ Allowed | ✅ Allowed | ✅ Allowed |
+| **Patient Audit History** (`GET /api/audit?patient_id=...`) | ✅ Allowed | ✅ Allowed | ✅ Allowed |
+| **Full Audit Trail Explorer** (`GET /api/audit`) | ❌ Denied (403) | ✅ Allowed | ✅ Allowed |
+| **Surge / Advance Time** (`POST /api/simulation/...`) | ✅ Allowed | ✅ Allowed | ✅ Allowed |
+| **Demographic Policy Config** (`GET/POST /api/admin/config`) | ❌ Denied (403) | ❌ Denied (403) | ✅ Allowed |
+| **User Administration** (`GET/POST /api/admin/users`) | ❌ Denied (403) | ❌ Denied (403) | ✅ Allowed |
 
-## 4. Security controls to demonstrate
+### Synthetic Demo Accounts (Default Password: `Password@123`)
+- `nurse101`: Frontline Emergency Department Triage Nurse
+- `supervisor101`: ED Charge Nurse / Triage Shift Supervisor
+- `admin101`: Clinical Engineering & System Administrator
+
+### Identity Spoofing Protection
+Clinician identity (`actor_id`, `actor_role`) for overrides and observation updates is authoritatively resolved from the authenticated JWT session on the server. Client attempts to pass spoofed `clinician_id` or `actor_role` values in request bodies are discarded.
+
+## 4. Security controls demonstrated
 
 - authenticated sessions,
 - role-based authorization,

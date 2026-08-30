@@ -2,7 +2,7 @@
 
 ## Purpose
 
-These cases are designed to test the prototype against the explicit Round-2 requirements.
+These cases are designed to test the prototype against explicit safety, edge-case, and continuous re-triage requirements.
 
 They are **not clinical benchmark cases**.
 
@@ -10,7 +10,7 @@ The "expected behavior" column is a prototype-behavior assertion, not a medical 
 
 ## Test matrix
 
-| ID | Profile | History | Presentation | Key challenge | Expected prototype behavior |
+| ID | Profile | History | Presentation | Clinical Scenario | Expected prototype behavior |
 |---|---|---|---|---|---|
 | PT-001 | Adult | Full | straightforward | baseline | RECOMMEND |
 | PT-002 | Adult | Full | straightforward | baseline | RECOMMEND |
