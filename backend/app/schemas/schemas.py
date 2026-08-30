@@ -79,7 +79,6 @@ class PatientOut(PatientBase):
     class Config:
         from_attributes = True
 
-# --- Triage Result Schemas ---
 class TriageResultOut(BaseModel):
     result_id: str
     patient_id: str
@@ -96,17 +95,47 @@ class TriageResultOut(BaseModel):
     population_profile: str
     policy_version: str
     model_version: str
+    model_status: str = "CALIBRATED_ML"
+    model_available: bool = True
+    model_source: str = "calibrated_model"
     disclaimer: str = "Synthetic / illustrative policy — not for clinical diagnosis or treatment."
 
     class Config:
         from_attributes = True
 
+# --- Authentication & User Schemas ---
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=1, max_length=100)
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: str
+    username: str
+    role: str
+
+class UserOut(BaseModel):
+    user_id: str
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6, max_length=100)
+    role: str = Field("nurse", pattern="^(nurse|supervisor|admin)$")
+
 # --- Clinician Decision & Override Schemas ---
 class ClinicianDecisionCreate(BaseModel):
-    clinician_id: str = "nurse-101"
-    actor_role: str = "nurse"  # nurse | supervisor | admin
-    clinician_action: str  # accept | override | escalate
-    final_priority: str    # IMMEDIATE | HIGH | MODERATE | LOW | REVIEW
+    clinician_id: Optional[str] = None  # Ignored in favor of authenticated user token
+    actor_role: Optional[str] = None    # Ignored in favor of authenticated user token
+    clinician_action: str               # accept | override | escalate
+    final_priority: str                 # IMMEDIATE | HIGH | MODERATE | LOW | REVIEW
     override_reason: Optional[str] = None
     clinician_note: Optional[str] = None
 
@@ -125,6 +154,20 @@ class ClinicianDecisionOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- Admin Configuration Schemas ---
+class AdminConfigOut(BaseModel):
+    project_name: str
+    version: str
+    pediatric_max_age: int
+    geriatric_min_age: int
+    min_confidence_threshold: float
+    min_completeness_threshold: float
+    disclaimer: str
+
+class AdminConfigUpdate(BaseModel):
+    pediatric_max_age: Optional[int] = Field(None, ge=1, le=25)
+    geriatric_min_age: Optional[int] = Field(None, ge=50, le=100)
 
 # --- Audit Event Schemas ---
 class AuditEventOut(BaseModel):
@@ -151,6 +194,14 @@ class AdvanceTimeRequest(BaseModel):
 
 class SurgeToggleRequest(BaseModel):
     surge_active: bool
+
+class SimulationStatus(BaseModel):
+    surge_active: bool
+    time_offset_minutes: int
+    model_status: str = "CALIBRATED_ML"
+    model_available: bool = True
+    model_source: str = "calibrated_model"
+    disclaimer: str = "Synthetic simulation environment for decision support validation."
 
 SimulationAdvanceTime = AdvanceTimeRequest
 SimulationSurgeToggle = SurgeToggleRequest

@@ -63,19 +63,31 @@ Probability calibration lowered the Brier score from {lr_raw['brier_score']} to 
 ## 1. Executive Summary
 This evaluation report documents the empirical performance of the AcuityFlow AI ML risk baseline and decision-support safety pipeline.
 
-## 2. Actual Computed ML Metrics (Test Split: N = {ds['test_records']})
+## 2. Dataset Splits & Leakage Prevention Protocol
+- **Total Synthetic Cohort**: {ds['total_records']} synthetic records (`SYN-00001` through `SYN-02500`)
+- **Training Set ($N_{{train}}$)**: **{ds['train_records']}** records (70.0%)
+- **Validation Set ($N_{{val}}$)**: **{ds['val_records']}** records (15.0%)
+- **Held-out Test Set ($N_{{test}}$)**: **{ds['test_records']}** records (15.0%)
+- **Random Seed**: Fixed `random_state = 42` (with target stratification across all split stages)
+
+### Zero Train/Test Leakage Guarantee
+1. **Preprocessing Pipeline Isolation**: All transformers (`SimpleImputer`, `StandardScaler`, `OneHotEncoder`) are fit strictly on `X_train` inside the scikit-learn pipeline (`Pipeline.fit(X_train, y_train)`).
+2. **Independent Test Evaluation**: The test split ($N = {ds['test_records']}$) is strictly transformed and evaluated post-fitting. The test set is never used during parameter optimization or probability calibration folds (`CalibratedClassifierCV(cv=5)` on `X_train`).
+3. **Showcase Scenarios Non-Contamination**: The 24 showcase demonstration patients (`PT-001` to `PT-024`) are maintained exclusively in `backend/app/data/seed_cases.py` for runtime validation. Zero showcase scenarios exist in or were used to train the ML risk model.
+
+## 3. Actual Computed ML Metrics (Test Split: N = {ds['test_records']})
 - **ROC-AUC**: {lr_cal['roc_auc']}
 - **Brier Score**: {lr_cal['brier_score']}
 - **High-Acuity Sensitivity/Recall**: {lr_cal['high_acuity_recall']}
 - **High-Acuity Precision**: {lr_cal['high_acuity_precision']}
 - **Macro F1**: {lr_cal['macro_f1']}
 
-## 3. Policy & Safety System Evaluation
+## 4. Policy & Safety System Evaluation
 1. **Safety Override Invariant**: In 100% of conflicting observation scenarios (e.g. SpO2 99% + Cyanosis), the safety gate forces `ABSTAIN / REVIEW`, overriding any ML estimate.
 2. **Under-Triage Prevention**: Low confidence or incomplete data on moderate+ presentations reliably triggers `ESCALATE / CLINICIAN REVIEW`.
 3. **Queue Deterioration Detection**: Reassessment monitor catches physiological deltas (SpO2 drops >=4%, HR jumps >=25 bpm) and surfaces overdue wait times.
 
-## 4. Disclaimer
+## 5. Disclaimer
 All figures are computed from synthetic experimental validation scripts and must not be interpreted as real-world clinical efficacy.
 """
 
