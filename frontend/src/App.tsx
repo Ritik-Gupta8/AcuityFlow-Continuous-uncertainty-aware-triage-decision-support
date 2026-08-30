@@ -36,10 +36,7 @@ export const App: React.FC = () => {
       setSimulationStatus(simData);
 
       // If a patient modal is open, refresh their data too
-      if (selectedPatient) {
-        const updated = patientsData.find((p) => p.patient_id === selectedPatient.patient_id);
-        if (updated) setSelectedPatient(updated);
-      }
+      setSelectedPatient(prev => prev ? (patientsData.find(p => p.patient_id === prev.patient_id) || prev) : null);
     } catch (err) {
       console.error('Error polling data:', err);
     } finally {
