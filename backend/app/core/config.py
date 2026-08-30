@@ -97,9 +97,9 @@ class Settings(BaseSettings):
     REASSESSMENT_WINDOWS_MINUTES: Dict[str, int] = {
         "IMMEDIATE": 0,    # Continuous / Immediate attention
         "HIGH": 15,        # 15 minutes max
-        "MODERATE": 45,    # 45 minutes max
-        "LOW": 120,        # 120 minutes max
-        "REVIEW": 15       # Quick clinician review
+        "MODERATE": 15,    # 15 minutes max policy window
+        "LOW": 60,         # 60 minutes max
+        "REVIEW": 15       # 15 minutes max for clinician review
     }
     
     # Uncertainty thresholds for Escalation Bias

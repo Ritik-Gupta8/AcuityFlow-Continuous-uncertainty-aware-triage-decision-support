@@ -9,11 +9,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db, Base, engine
-from app.models.entities import Patient, Observation, AuditEvent
+from app.models.entities import Patient, Observation, AuditEvent, TriageResult
 from app.schemas.schemas import AdvanceTimeRequest, SurgeToggleRequest, InjectVitalsRequest
 from app.reassessment.monitor import reassessment_monitor
 from app.policy.action_policy import evaluate_patient_triage
-from app.data.seed_cases import seed_database
+from app.data.seed_cases import seed_database, populate_surge_patients, remove_surge_patients
 
 router = APIRouter(prefix="/simulation", tags=["Simulation Controls"])
 
@@ -56,12 +56,19 @@ def advance_simulated_time(req: AdvanceTimeRequest, db: Session = Depends(get_db
         actor_id="simulation-engine",
         actor_role="system",
         event_type="time_advance",
+        patient_id=None,
+        recommendation=None,
+        confidence=None,
+        decision="TIME_ADVANCE",
+        override_reason=None,
         details={
             "minutes_advanced": req.minutes,
             "total_offset": SIMULATION_STATE["current_time_offset_minutes"],
             "patients_affected": updated_count,
             "reassessments_triggered": reassessment_triggered
-        }
+        },
+        policy_version="v2.0.0-prototype",
+        model_version="ml-baseline-v1"
     )
     db.add(audit)
     db.commit()
@@ -75,16 +82,28 @@ def advance_simulated_time(req: AdvanceTimeRequest, db: Session = Depends(get_db
 
 @router.post("/surge")
 def toggle_surge_mode(req: SurgeToggleRequest, db: Session = Depends(get_db)):
-    """Toggles 3x surge mode status."""
+    """Toggles 3x surge mode status and dynamically scales arrival workload."""
     SIMULATION_STATE["surge_active"] = req.surge_active
     
+    if req.surge_active:
+        populate_surge_patients(db)
+    else:
+        remove_surge_patients(db)
+
     audit = AuditEvent(
         audit_id=f"AUD-{uuid.uuid4().hex[:8]}",
         timestamp=datetime.now(timezone.utc),
         actor_id="supervisor-201",
         actor_role="supervisor",
         event_type="surge_toggle",
-        details={"surge_active": req.surge_active, "multiplier": 3.0 if req.surge_active else 1.0}
+        patient_id=None,
+        recommendation=None,
+        confidence=None,
+        decision="SURGE_TOGGLE",
+        override_reason=None,
+        details={"surge_active": req.surge_active, "multiplier": 3.0 if req.surge_active else 1.0},
+        policy_version="v2.0.0-prototype",
+        model_version="ml-baseline-v1"
     )
     db.add(audit)
     db.commit()
@@ -92,7 +111,7 @@ def toggle_surge_mode(req: SurgeToggleRequest, db: Session = Depends(get_db)):
     return {
         "status": "success",
         "surge_active": req.surge_active,
-        "message": "3x Surge mode activated: attention queue prioritized" if req.surge_active else "Standard queue mode restored"
+        "message": "3x Surge mode activated: queue volume scaled 3x (72 patients) with attention-first prioritization" if req.surge_active else "Standard queue mode restored (24 patients)"
     }
 
 @router.post("/inject-deterioration")
@@ -102,12 +121,14 @@ def inject_deterioration_vitals(req: InjectVitalsRequest, db: Session = Depends(
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    # If vitals aren't specified, apply a preset deterioration
-    hr = req.heart_rate or 122.0
-    rr = req.respiratory_rate or 28.0
-    sbp = req.systolic_bp or 94.0
-    spo2 = req.spo2 or 89.0
-    temp = req.temperature_c or 37.9
+    # If vitals aren't specified, apply preset deterioration
+    is_pt21 = (patient.patient_id == "PT-021")
+    hr = req.heart_rate if req.heart_rate is not None else (118.0 if is_pt21 else 122.0)
+    rr = req.respiratory_rate if req.respiratory_rate is not None else (26.0 if is_pt21 else 28.0)
+    sbp = req.systolic_bp if req.systolic_bp is not None else (98.0 if is_pt21 else 94.0)
+    dbp = req.diastolic_bp if req.diastolic_bp is not None else (62.0 if is_pt21 else 60.0)
+    spo2 = req.spo2 if req.spo2 is not None else (91.0 if is_pt21 else 89.0)
+    temp = req.temperature_c if req.temperature_c is not None else (37.3 if is_pt21 else 37.9)
 
     new_obs = Observation(
         observation_id=f"OBS-{uuid.uuid4().hex[:8]}",
@@ -116,18 +137,29 @@ def inject_deterioration_vitals(req: InjectVitalsRequest, db: Session = Depends(
         heart_rate=hr,
         respiratory_rate=rr,
         systolic_bp=sbp,
-        diastolic_bp=60.0,
+        diastolic_bp=dbp,
         spo2=spo2,
         temperature_c=temp,
         measurement_source="device",
-        observation_notes=req.notes or "Simulated deterioration injection"
+        observation_notes=req.notes or ("Simulated acute deterioration injection" if is_pt21 else "Simulated deterioration injection")
     )
     db.add(new_obs)
+    if new_obs not in patient.observations:
+        patient.observations.append(new_obs)
     db.flush()
 
     # Re-evaluate triage and reassessment
     eval_result = evaluate_patient_triage(patient, new_obs)
-    patient.current_priority = eval_result.priority
+    patient.ai_priority = eval_result.priority
+    patient.ai_workflow_action = eval_result.action
+    patient.ai_confidence = eval_result.confidence_score
+    patient.ai_risk_score = eval_result.risk_score
+    if patient.clinician_action != "override":
+        patient.effective_priority = eval_result.priority
+        patient.current_priority = eval_result.priority
+    else:
+        patient.effective_priority = patient.clinician_decision
+        patient.current_priority = patient.clinician_decision
     patient.current_action = eval_result.action
     patient.current_confidence = eval_result.confidence_score
     patient.current_risk_score = eval_result.risk_score
@@ -135,6 +167,24 @@ def inject_deterioration_vitals(req: InjectVitalsRequest, db: Session = Depends(
     needs_reassess, reasons, _ = reassessment_monitor.evaluate_patient_reassessment(patient)
     patient.needs_reassessment = True  # Explicitly flag deterioration
     patient.reassessment_reasons = reasons if reasons else ["Deteriorating vital signs detected"]
+
+    # Persist updated TriageResult
+    triage_record = TriageResult(
+        result_id=f"TR-{patient.patient_id}-{uuid.uuid4().hex[:6]}",
+        patient_id=patient.patient_id,
+        timestamp=datetime.now(timezone.utc),
+        risk_score=eval_result.risk_score,
+        confidence_score=eval_result.confidence_score,
+        data_completeness=eval_result.data_completeness,
+        priority=eval_result.priority,
+        action=eval_result.action,
+        safety_flags=eval_result.safety_flags,
+        key_signals=eval_result.key_signals,
+        missing_information=eval_result.missing_information,
+        explanation=eval_result.explanation,
+        population_profile=eval_result.population_profile
+    )
+    db.add(triage_record)
 
     audit = AuditEvent(
         audit_id=f"AUD-{uuid.uuid4().hex[:8]}",
@@ -146,7 +196,10 @@ def inject_deterioration_vitals(req: InjectVitalsRequest, db: Session = Depends(
         recommendation=eval_result.priority,
         confidence=eval_result.confidence_score,
         decision="REASSESS",
-        details={"injected_vitals": {"hr": hr, "spo2": spo2, "sbp": sbp}}
+        override_reason=None,
+        details={"injected_vitals": {"hr": hr, "spo2": spo2, "sbp": sbp, "rr": rr}, "risk_score": eval_result.risk_score},
+        policy_version="v2.0.0-prototype",
+        model_version="ml-baseline-v1"
     )
     db.add(audit)
     db.commit()
