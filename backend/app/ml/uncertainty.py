@@ -58,7 +58,10 @@ def compute_uncertainty_breakdown(
     model_certainty = round(raw_certainty * completeness_factor, 1)
     
     if model_certainty < 50.0:
-        factors.append(f"Model certainty is limited ({model_certainty}%): Probability ({round(calibrated_prob, 2)}) evaluated on incomplete/imputed inputs.")
+        if completeness < 65.0:
+            factors.append(f"Decision boundary margin is limited ({model_certainty}%): Probability estimate ({round(calibrated_prob, 2)}) evaluated on incomplete/imputed inputs.")
+        else:
+            factors.append(f"Borderline classification probability ({round(calibrated_prob * 100, 1)}% vs 50% threshold): Statistical decision boundary margin is {model_certainty}%.")
 
     # 2. Data Reliability (Completeness)
     data_reliability = round(completeness, 1)

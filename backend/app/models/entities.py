@@ -32,10 +32,27 @@ class Patient(Base):
     arrival_time = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     waiting_minutes = Column(Integer, default=0)
     current_status = Column(String, default="WAITING")  # WAITING, ATTENDING, ADMITTED, DISCHARGED
-    current_priority = Column(String, default="MODERATE")  # IMMEDIATE, HIGH, MODERATE, LOW, REVIEW
-    current_action = Column(String, default="RECOMMEND")   # RECOMMEND, REASSESS, ESCALATE, ABSTAIN
-    current_confidence = Column(Float, default=75.0)
-    current_risk_score = Column(Float, default=30.0)
+    
+    # 1. AI Recommendation State (Immutable from ML + Safety Engine)
+    ai_priority = Column(String, default="MODERATE")        # IMMEDIATE, HIGH, MODERATE, LOW, REVIEW
+    ai_workflow_action = Column(String, default="RECOMMEND") # RECOMMEND, REASSESS, ESCALATE, ABSTAIN
+    ai_confidence = Column(Float, default=75.0)
+    ai_risk_score = Column(Float, default=30.0)
+
+    # 2. Clinician Decision & Human Override State (Separate from AI recommendation)
+    clinician_decision = Column(String, nullable=True)      # IMMEDIATE, HIGH, MODERATE, LOW, REVIEW
+    clinician_action = Column(String, nullable=True)        # accept, override, escalate
+    override_reason = Column(String, nullable=True)
+
+    # 3. Operational Effective Priority & Workflow State
+    effective_priority = Column(String, default="MODERATE") # Operates on clinician_decision if overridden, else ai_priority
+    reassessment_state = Column(String, default="NORMAL")   # NORMAL, OVERDUE, DETERIORATING
+
+    # Active operational state aliases (kept synchronized)
+    current_priority = Column(String, default="MODERATE")   # Synchronized with effective_priority
+    current_action = Column(String, default="RECOMMEND")     # Synchronized with ai_workflow_action
+    current_confidence = Column(Float, default=75.0)         # Synchronized with ai_confidence
+    current_risk_score = Column(Float, default=30.0)         # Synchronized with ai_risk_score
     
     # Flags
     needs_reassessment = Column(Boolean, default=False)
