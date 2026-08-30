@@ -25,8 +25,25 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   const reassessCount = patients.filter((p) => p.needs_reassessment).length;
   const uncertainCount = patients.filter((p) => p.current_confidence < 65.0).length;
 
-  // Filter attention queue (patients with active reassessment needs)
-  const attentionPatients = patients.filter((p) => p.needs_reassessment);
+  // Filter and sort attention queue strictly by operational hierarchy:
+  // 1. Deteriorating (1000) -> 2. Reassessment Overdue (500) -> 3. Low Confidence (300) -> 4. High Priority (120+)
+  const getAttentionKey = (p: Patient) => {
+    let score = 0;
+    if (p.reassessment_reasons?.some((r) => r.toLowerCase().includes('deterioration'))) score += 1000;
+    if (p.reassessment_reasons?.some((r) => r.toLowerCase().includes('overdue'))) score += 500;
+    if (p.current_confidence < 65.0) score += 300;
+    if (p.current_priority === 'IMMEDIATE') score += 150;
+    else if (p.current_priority === 'HIGH') score += 120;
+    else if (p.current_priority === 'REVIEW') score += 80;
+    else if (p.current_priority === 'MODERATE') score += 40;
+    else score += 10;
+    score += Math.min(50, p.waiting_minutes);
+    return score;
+  };
+
+  const attentionPatients = [...patients.filter((p) => p.needs_reassessment)].sort(
+    (a, b) => getAttentionKey(b) - getAttentionKey(a)
+  );
 
   // Filter main queue
   const filteredPatients = patients.filter((p) => {
@@ -54,7 +71,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           </div>
           <div className="metric-data">
             <h4>Waiting Queue Size</h4>
-            <div className="metric-value">{totalCount} {surgeActive ? '(3× Surge)' : ''}</div>
+            <div className="metric-value">{totalCount} {surgeActive ? '(3× Surge Active)' : ''}</div>
           </div>
         </div>
 
@@ -96,33 +113,60 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
             <div className="attention-title">
               <Zap size={20} />
               <span>AcuityWatch Attention Queue ({attentionPatients.length} Cases Requiring Reassessment)</span>
-              <span className="attention-badge-count">URGENT</span>
+              <span className="attention-badge-count">
+                {surgeActive ? '3× SURGE ATTENTION-FIRST' : 'URGENT'}
+              </span>
             </div>
           </div>
 
           <div className="attention-grid">
-            {attentionPatients.map((patient) => (
-              <div
-                key={patient.patient_id}
-                className="attention-card"
-                onClick={() => onSelectPatient(patient)}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 800, color: '#f87171' }}>{patient.patient_id}</span>
-                  <span className={`priority-tag priority-${patient.current_priority}`}>
-                    {patient.current_priority}
-                  </span>
+            {attentionPatients.map((patient) => {
+              const isDet = patient.reassessment_reasons?.some((r) => r.toLowerCase().includes('deterioration'));
+              const isOverdue = patient.reassessment_reasons?.some((r) => r.toLowerCase().includes('overdue'));
+              const isUncertain = patient.current_confidence < 65.0;
+
+              return (
+                <div
+                  key={patient.patient_id}
+                  className="attention-card"
+                  onClick={() => onSelectPatient(patient)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 800, color: isDet ? '#f87171' : '#60a5fa' }}>
+                        {patient.patient_id}
+                      </span>
+                      {isDet && (
+                        <span style={{ fontSize: '0.64rem', background: '#dc2626', color: 'white', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>
+                          ⚡ DETERIORATING
+                        </span>
+                      )}
+                      {!isDet && isOverdue && (
+                        <span style={{ fontSize: '0.64rem', background: 'rgba(217, 119, 6, 0.3)', color: '#fbbf24', border: '1px solid #d97706', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>
+                          ⏱️ OVERDUE
+                        </span>
+                      )}
+                      {!isDet && !isOverdue && isUncertain && (
+                        <span style={{ fontSize: '0.64rem', background: 'rgba(168, 85, 247, 0.3)', color: '#c084fc', border: '1px solid #9333ea', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>
+                          ⚠️ LOW CONF
+                        </span>
+                      )}
+                    </div>
+                    <span className={`priority-tag priority-${patient.current_priority}`}>
+                      {patient.current_priority}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{patient.name}</div>
+                  <div style={{ fontSize: '0.78rem', color: isDet ? '#fca5a5' : '#fed7aa' }}>
+                    {patient.reassessment_reasons[0] || 'Reassessment triggered'}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#9ca3af', marginTop: 4 }}>
+                    <span>Waiting: {patient.waiting_minutes}m</span>
+                    <span style={{ color: '#60a5fa', fontWeight: 600 }}>Review & Triage &rarr;</span>
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{patient.name}</div>
-                <div style={{ fontSize: '0.78rem', color: '#fca5a5' }}>
-                  {patient.reassessment_reasons[0] || 'Deterioration detected in waiting queue'}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#9ca3af', marginTop: 4 }}>
-                  <span>Waiting: {patient.waiting_minutes}m</span>
-                  <span style={{ color: '#60a5fa', fontWeight: 600 }}>Review & Triage &rarr;</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

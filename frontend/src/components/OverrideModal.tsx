@@ -14,7 +14,10 @@ export const OverrideModal: React.FC<OverrideModalProps> = ({
   onClose,
   onOverrideSuccess,
 }) => {
-  const [finalPriority, setFinalPriority] = useState<any>(patient.current_priority);
+  // Source of truth: Read exact immutable AI recommendation from patient.ai_priority
+  const aiRecommendedPriority = patient.ai_priority || patient.current_priority;
+  const aiConfidence = patient.ai_confidence ?? patient.current_confidence;
+  const [finalPriority, setFinalPriority] = useState<any>(patient.clinician_decision || aiRecommendedPriority);
   const [reason, setReason] = useState<string>('Additional clinical context from physical exam');
   const [note, setNote] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
@@ -59,11 +62,16 @@ export const OverrideModal: React.FC<OverrideModalProps> = ({
               <div><strong>Patient:</strong> {patient.name} ({patient.patient_id})</div>
               <div style={{ marginTop: 4 }}>
                 <strong>AI Recommended Priority: </strong>
-                <span className={`priority-tag priority-${patient.current_priority}`} style={{ marginLeft: 6 }}>
-                  {patient.current_priority}
+                <span className={`priority-tag priority-${aiRecommendedPriority}`} style={{ marginLeft: 6 }}>
+                  {aiRecommendedPriority}
                 </span>
-                <span style={{ marginLeft: 8, color: '#9ca3af' }}>({patient.current_confidence}% confidence)</span>
+                <span style={{ marginLeft: 8, color: '#9ca3af' }}>({aiConfidence}% workflow confidence)</span>
               </div>
+              {patient.clinician_decision && patient.clinician_action === 'override' && (
+                <div style={{ marginTop: 6, fontSize: '0.76rem', color: '#93c5fd' }}>
+                  <strong>Current Human Override:</strong> {patient.clinician_decision} ({patient.override_reason})
+                </div>
+              )}
             </div>
 
             {/* Final Priority Selector */}
