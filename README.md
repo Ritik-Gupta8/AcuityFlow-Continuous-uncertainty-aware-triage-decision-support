@@ -45,7 +45,7 @@ Traditional emergency department triage assigns a static acuity score at intake,
 
 ---
 
-## Killer Capability
+## Core Innovation
 
 ### Continuous Risk-Aware Re-Triage
 
